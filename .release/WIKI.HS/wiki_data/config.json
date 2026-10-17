@@ -1,0 +1,14 @@
+{
+  "token": "rCV9BYsELnULiJaj",
+  "port": 8081,
+  "owner": "",
+  "smtp": {
+    "host": "",
+    "port": "465",
+    "ssl": "1",
+    "user": "",
+    "password": "",
+    "from": ""
+  },
+  "_说明": "首次启动自动生成随机 token 并打印在日志里；smtp 填好才能真发邮件；owner 留空 = 第一个验证的账号自动当站长"
+}

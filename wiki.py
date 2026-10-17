@@ -1951,6 +1951,98 @@ async def route_login_page_q(token: str = "", msg: str = "", err: str = "") -> H
     return HTMLResponse(view_login(msg, err))
 
 
+def release_zip() -> Optional[Path]:
+    """发布包位置：先看配置里的 release_zip，再找几个常见目录"""
+    here = Path(__file__).resolve().parent
+    cands = []
+    cfg_name = str(load_config().get("release_zip") or "").strip()
+    if cfg_name:
+        cands.append(Path(cfg_name))
+        cands.append(here / cfg_name)
+    cands += [here.parent.parent / "WIKI.HS.zip", here / "WIKI.HS.zip",
+              DATA_DIR / "WIKI.HS.zip"]
+    for c in cands:
+        try:
+            if c.exists() and c.is_file():
+                return c
+        except Exception:
+            continue
+    return None
+
+
+@app.get("/download/WIKI.HS.zip")
+async def route_download_wiki():
+    """发布包下载（放在站点上方便直接点按钮下载）"""
+    p = release_zip()
+    if p is None:
+        return PlainTextResponse("发布包不存在", status_code=404)
+    return FileResponse(str(p), media_type="application/zip",
+                        filename="WIKI.HS.zip",
+                        headers={"Content-Disposition": 'attachment; filename="WIKI.HS.zip"'})
+
+
+@app.get("/download", response_class=HTMLResponse)
+async def route_download_page() -> HTMLResponse:
+    """下载页（带一个大按钮）"""
+    p = release_zip()
+    size = (p.stat().st_size / 1024) if p else 0
+    import hashlib
+    md5 = ""
+    if p.exists():
+        try:
+            md5 = hashlib.md5(p.read_bytes()).hexdigest()
+        except Exception:
+            md5 = ""
+    box = ("background:var(--panel);border:1px solid var(--line);"
+           "border-radius:12px;padding:18px 22px;font-size:13.5px;line-height:2;"
+           "text-align:left;margin-top:16px")
+    inner = f"""
+    <div style="max-width:640px;margin:34px auto">
+      <div style="text-align:center">
+        <h1 style="font-size:30px;margin-bottom:6px">📦 WIKI.HS</h1>
+        <p style="color:var(--sub);margin:0 0 6px">星海百科 · 群知识库网站</p>
+        <p style="color:var(--accent);font-weight:600;font-size:15px">
+          🎁 公益免费 · 可自由使用与二创</p>
+        <div style="margin:22px 0 8px">
+          <a href="/download/WIKI.HS.zip"
+             style="display:inline-block;padding:16px 46px;background:var(--accent);
+                    color:#fff;font-size:18px;font-weight:600;border-radius:12px;
+                    text-decoration:none;box-shadow:0 4px 14px rgba(47,111,79,.28)">
+            ⬇ 下载 WIKI.HS.zip</a>
+        </div>
+        <p style="color:var(--sub);font-size:12.5px">
+          {size:.0f} KB　版本 1.1　MD5：<code>{md5}</code></p>
+      </div>
+
+      <div style="{box}">
+        <b>🚀 一键部署（Linux 服务器）</b><br>
+        <code>sudo bash deploy.sh</code>　约 1 分钟装完，自动开机自启<br>
+        <span style="color:var(--sub)">可选参数：--port 9000 / --domain wiki.xxx.com（自动 HTTPS）</span>
+      </div>
+
+      <div style="{box}">
+        <b>🧩 装进现有机器人</b><br>
+        1. 解压，把 <code>WIKI.HS</code> 里所有文件放进 <code>机器人/src/plugins/wiki/</code><br>
+        2. 重启机器人，看日志打印的地址和口令<br>
+        3. 打开 <code>/register</code> 注册第一个账号 → 自动成为站长
+      </div>
+
+      <div style="{box}">
+        <b>✨ 包含什么</b><br>
+        · 服务端渲染 WIKI，零前端依赖、断网可用<br>
+        · 后台：仪表盘 / 服务器负载 / 媒体库 / 词条管理 / Cookie 分发 / 邮件<br>
+        · 账号体系：注册 + 邮箱验证码 + 人机验证，三级权限<br>
+        · 图片上传（5MB 上限，校验文件头）<br>
+        · 删除有回收站，误删可恢复
+      </div>
+
+      <div style="text-align:center;color:var(--sub);font-size:12.5px;margin-top:22px">
+        用爱发电 · 如果帮到你了，留个 Star 或转给需要的朋友就够啦 💚
+      </div>
+    </div>"""
+    return HTMLResponse(_layout("下载", inner))
+
+
 @app.get("/health", response_class=JSONResponse)
 async def route_health() -> JSONResponse:
     data = load_pages()
