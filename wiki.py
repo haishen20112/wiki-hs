@@ -242,170 +242,335 @@ def md_to_html(body: str) -> str:
 
 CSS = """
 :root{
-  --bg:#f7f8f5; --panel:#ffffff; --ink:#1f2733; --sub:#6b7686;
-  --line:#e5e8e2; --accent:#2f6f4f; --accent2:#3f7ea6; --soft:#eef2ec;
-  --code:#282c34;
+  /* 底：暖白，比纯白柔和，长时间看不刺眼 */
+  --bg:#fbfaf8; --bg2:#f5f3ef;
+  --panel:#ffffff; --panel2:#faf9f7;
+  --ink:#1c2430; --ink2:#39434f; --sub:#79838f; --faint:#a8b0b9;
+  --line:#e8e5df; --line2:#d8d4cc;
+  /* 主色：墨绿，稳；强调色：暖橙，只用于点缀 */
+  --accent:#2c6e5b; --accent-ink:#1f5445; --accent-soft:#e6f0ec;
+  --accent2:#3b7ea1; --accent2-soft:#e5eff5;
+  --warm:#c9703c; --warm-soft:#fbeee5;
+  --ok:#2c6e5b; --warn:#c9963c; --bad:#b8493c;
+  --soft:#f2f0eb;
+  --code:#232b33;
+  --shadow:0 1px 2px rgba(28,36,48,.04), 0 4px 14px rgba(28,36,48,.05);
+  --shadow-lg:0 2px 6px rgba(28,36,48,.06), 0 12px 34px rgba(28,36,48,.09);
+  --radius:12px;
 }
 @media (prefers-color-scheme: dark){
-  :root{ --bg:#14181d; --panel:#1b2027; --ink:#e6ebf2; --sub:#93a0b0;
-    --line:#2a313a; --accent:#6fd39a; --accent2:#79b8e6; --soft:#212833;
-    --code:#0d1013; }
+  :root{
+    --bg:#151a1f; --bg2:#11161a;
+    --panel:#1c2228; --panel2:#202730;
+    --ink:#e8edf3; --ink2:#c9d3dd; --sub:#8e9aa7; --faint:#65717e;
+    --line:#2a323b; --line2:#38424d;
+    --accent:#5fc79e; --accent-ink:#8fe0bf; --accent-soft:#1e2f29;
+    --accent2:#6fb3d9; --accent2-soft:#1c2b35;
+    --warm:#e0915a; --warm-soft:#33251b;
+    --ok:#5fc79e; --warn:#e0b45a; --bad:#e0776a;
+    --soft:#232b34;
+    --code:#0e1317;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.24);
+    --shadow-lg:0 2px 8px rgba(0,0,0,.35), 0 14px 40px rgba(0,0,0,.4);
+  }
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{
-  background:var(--bg); color:var(--ink); line-height:1.75;
+  background:var(--bg); color:var(--ink); line-height:1.72;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",
     "Hiragino Sans GB","Microsoft YaHei","Source Han Sans SC",sans-serif;
   font-size:15.5px;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  text-rendering:optimizeLegibility;
 }
-a{color:var(--accent2);text-decoration:none}
-a:hover{text-decoration:underline}
+::selection{background:var(--accent-soft);color:var(--accent-ink)}
+a{color:var(--accent2);text-decoration:none;transition:color .15s}
+a:hover{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
 .layout{display:flex;min-height:100vh}
+
+/* ── 侧栏 ── */
 .side{
-  width:250px;flex:0 0 250px;background:var(--panel);border-right:1px solid var(--line);
-  padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto;
+  width:256px;flex:0 0 256px;
+  background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+  border-right:1px solid var(--line);
+  padding:24px 18px;position:sticky;top:0;height:100vh;overflow:auto;
+  scrollbar-width:thin;
 }
-.logo{display:flex;align-items:center;gap:9px;font-size:19px;font-weight:800;letter-spacing:2px;color:var(--ink)}
-.logo-img{width:30px;height:30px;border-radius:8px;display:block;flex-shrink:0}
-.logo span{color:var(--accent)}
-.sub{font-size:12px;color:var(--sub);margin-top:4px;letter-spacing:.5px}
-.search{margin:18px 0 10px;display:flex;gap:6px}
+.side::-webkit-scrollbar{width:6px}
+.side::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+.logo{
+  display:flex;align-items:center;gap:10px;font-size:19px;font-weight:800;
+  letter-spacing:1.5px;color:var(--ink);
+}
+.logo-img{
+  width:32px;height:32px;border-radius:9px;display:block;flex-shrink:0;
+  box-shadow:var(--shadow);
+}
+.logo span{
+  background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.sub{font-size:12px;color:var(--sub);margin-top:6px;letter-spacing:.3px}
+
+.search{margin:20px 0 12px;display:flex;gap:7px}
 .search input{
-  flex:1;min-width:0;padding:8px 11px;border:1px solid var(--line);border-radius:8px;
-  background:var(--bg);color:var(--ink);font-size:13.5px;outline:none;
+  flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);
+  border-radius:9px;background:var(--bg);color:var(--ink);
+  font-size:13.5px;outline:none;transition:border-color .15s,box-shadow .15s;
 }
-.search input:focus{border-color:var(--accent)}
+.search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.search input::placeholder{color:var(--faint)}
 .search button{
-  padding:8px 12px;border:1px solid var(--accent);background:var(--accent);color:#fff;
-  border-radius:8px;font-size:13.5px;cursor:pointer;
+  padding:9px 14px;border:1px solid var(--accent);background:var(--accent);
+  color:#fff;border-radius:9px;font-size:13.5px;cursor:pointer;
+  transition:background .15s,transform .1s;
 }
-.nav{margin-top:14px;display:flex;flex-direction:column;gap:2px}
+.search button:hover{background:var(--accent-ink)}
+.search button:active{transform:scale(.97)}
+
+.nav{margin-top:16px;display:flex;flex-direction:column;gap:2px}
 .nav a{
-  display:block;padding:6px 10px;border-radius:7px;color:var(--ink);font-size:14px;
+  display:block;padding:8px 11px;border-radius:9px;color:var(--ink2);
+  font-size:14px;transition:background .15s,color .15s;
+  position:relative;
 }
-.nav a:hover{background:var(--soft);text-decoration:none}
-.nav a.on{background:var(--soft);color:var(--accent);font-weight:600}
+.nav a:hover{background:var(--soft);color:var(--ink)}
+.nav a.on{
+  background:var(--accent-soft);color:var(--accent-ink);font-weight:600;
+}
+.nav a.on::before{
+  content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:3px;height:16px;border-radius:2px;background:var(--accent);
+}
 .side h3{
-  font-size:11.5px;color:var(--sub);letter-spacing:1.5px;margin:20px 0 6px;
+  font-size:11px;color:var(--faint);letter-spacing:1.4px;margin:24px 0 8px;
   font-weight:600;text-transform:uppercase;
 }
 .side ul{list-style:none;margin:0;padding:0}
 .side ul li a{
-  display:block;padding:4px 8px;border-radius:6px;font-size:13px;color:var(--sub);
+  display:block;padding:5px 9px;border-radius:7px;font-size:13px;color:var(--sub);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:background .15s,color .15s;
 }
-.side ul li a:hover{background:var(--soft);color:var(--ink);text-decoration:none}
-.main{flex:1;min-width:0;padding:30px 40px 60px;max-width:1000px}
-.crumb{font-size:12.5px;color:var(--sub);margin-bottom:10px}
-h1{font-size:31px;line-height:1.3;margin:0 0 6px;letter-spacing:.5px}
-.meta{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--sub);
-  padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:22px}
-.tag{display:inline-block;padding:1px 9px;border-radius:10px;background:var(--soft);
-  color:var(--accent2);font-size:12px}
-.article{font-size:16px}
-.article h2{font-size:22px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--accent)}
-.article h3{font-size:18px;margin:22px 0 10px}
-.article p{margin:0 0 13px}
-.article ul,.article ol{margin:0 0 14px;padding-left:26px}
-.article li{margin:3px 0}
+.side ul li a:hover{background:var(--soft);color:var(--ink)}
+
+/* ── 主区 ── */
+.main{flex:1;min-width:0;padding:34px 44px 70px;max-width:1020px}
+.crumb{font-size:12.5px;color:var(--faint);margin-bottom:12px}
+.crumb a{color:var(--sub)}
+h1{
+  font-size:32px;line-height:1.28;margin:0 0 8px;letter-spacing:.3px;
+  font-weight:800;color:var(--ink);
+}
+.meta{
+  display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--sub);
+  padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:26px;
+  align-items:center;
+}
+.tag{
+  display:inline-block;padding:2px 10px;border-radius:20px;
+  background:var(--accent2-soft);color:var(--accent2);font-size:12px;
+  transition:background .15s,color .15s;
+}
+.tag:hover{background:var(--accent2);color:#fff}
+
+/* ── 正文排版 ── */
+.article{font-size:16px;color:var(--ink2)}
+.article h2{
+  font-size:22px;margin:34px 0 14px;padding-left:13px;
+  border-left:4px solid var(--accent);color:var(--ink);font-weight:700;
+  line-height:1.4;
+}
+.article h3{font-size:18px;margin:26px 0 11px;color:var(--ink);font-weight:700}
+.article p{margin:0 0 14px}
+.article ul,.article ol{margin:0 0 15px;padding-left:26px}
+.article li{margin:4px 0}
+.article li::marker{color:var(--accent)}
 .article blockquote{
-  margin:14px 0;padding:8px 16px;border-left:3px solid var(--line);
-  color:var(--sub);background:var(--soft);border-radius:0 8px 8px 0;
+  margin:16px 0;padding:12px 18px;border-left:3px solid var(--accent);
+  color:var(--sub);background:var(--accent-soft);border-radius:0 10px 10px 0;
 }
 .article code{
-  background:var(--soft);padding:1.5px 6px;border-radius:5px;font-size:.92em;
+  background:var(--soft);padding:2px 7px;border-radius:5px;font-size:.9em;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:var(--accent-ink);border:1px solid var(--line);
 }
 .article pre.code{
-  background:var(--code);color:#e6edf3;padding:14px 16px;border-radius:10px;
-  overflow:auto;font-size:13.5px;line-height:1.6;
+  background:var(--code);color:#e6edf3;padding:16px 18px;border-radius:11px;
+  overflow:auto;font-size:13.5px;line-height:1.65;box-shadow:var(--shadow);
 }
-.article pre.code code{background:none;padding:0;color:inherit}
-.article hr{border:none;border-top:1px solid var(--line);margin:26px 0}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.article pre.code code{background:none;padding:0;color:inherit;border:none}
+.article hr{border:none;border-top:1px solid var(--line);margin:30px 0}
+.article img{max-width:100%;border-radius:10px;box-shadow:var(--shadow)}
+
+/* ── 卡片 ── */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
 .card{
-  background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px 17px;
-  display:block;transition:border-color .15s,transform .15s;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 20px;display:block;box-shadow:var(--shadow);
+  transition:border-color .18s,transform .18s,box-shadow .18s;
 }
-.card:hover{border-color:var(--accent);text-decoration:none;transform:translateY(-1px)}
-.card .t{font-size:15.5px;font-weight:700;color:var(--ink);margin-bottom:6px}
-.card .d{font-size:13px;color:var(--sub);line-height:1.65;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.empty{color:var(--sub);text-align:center;padding:50px 0;font-size:15px}
+.card:hover{
+  border-color:var(--accent);text-decoration:none;
+  transform:translateY(-2px);box-shadow:var(--shadow-lg);
+}
+.card .t{font-size:15.5px;font-weight:700;color:var(--ink);margin-bottom:7px}
+.card .d{
+  font-size:13px;color:var(--sub);line-height:1.65;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.empty{color:var(--sub);text-align:center;padding:60px 0;font-size:15px}
+
+/* ── 按钮 ── */
 .btn{
-  display:inline-block;padding:8px 16px;border-radius:8px;border:1px solid var(--line);
+  display:inline-block;padding:9px 18px;border-radius:9px;border:1px solid var(--line2);
   background:var(--panel);color:var(--ink);font-size:14px;cursor:pointer;
+  transition:background .15s,border-color .15s,transform .1s,box-shadow .15s;
+  font-family:inherit;
 }
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn:hover{text-decoration:none;opacity:.92}
+.btn:hover{
+  text-decoration:none;border-color:var(--accent);color:var(--accent);
+  box-shadow:var(--shadow);
+}
+.btn:active{transform:scale(.98)}
+.btn.primary{
+  background:var(--accent);border-color:var(--accent);color:#fff;
+  font-weight:600;
+}
+.btn.primary:hover{background:var(--accent-ink);border-color:var(--accent-ink);color:#fff}
+
+/* ── 表单 ── */
 .form{max-width:820px}
-.form label{display:block;font-size:13px;color:var(--sub);margin:16px 0 6px}
+.form label{display:block;font-size:13px;color:var(--sub);margin:18px 0 7px;font-weight:500}
 .form input[type=text],.form textarea{
-  width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:9px;
-  background:var(--panel);color:var(--ink);font-size:15px;font-family:inherit;outline:none;
+  width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel);color:var(--ink);font-size:15px;font-family:inherit;
+  outline:none;transition:border-color .15s,box-shadow .15s;
 }
-.form textarea{min-height:380px;line-height:1.8;resize:vertical;
-  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px}
-.form input:focus,.form textarea:focus{border-color:var(--accent)}
-.actions{margin-top:20px;display:flex;gap:10px;align-items:center}
+.form textarea{
+  min-height:380px;line-height:1.8;resize:vertical;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;
+}
+.form input:focus,.form textarea:focus{
+  border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);
+}
+.actions{margin-top:22px;display:flex;gap:10px;align-items:center}
+
+/* ── 提示 ── */
 .notice{
-  padding:10px 15px;border-radius:9px;margin-bottom:18px;font-size:14px;
-  background:var(--soft);color:var(--accent);border:1px solid var(--line);
+  padding:12px 16px;border-radius:10px;margin-bottom:20px;font-size:14px;
+  background:var(--accent-soft);color:var(--accent-ink);
+  border:1px solid var(--line);border-left:3px solid var(--accent);
 }
-.notice.warn{color:#b4573c}
-.foot{margin-top:50px;padding-top:16px;border-top:1px solid var(--line);
-  font-size:12px;color:var(--sub);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.hist .row{padding:9px 0;border-bottom:1px dashed var(--line);font-size:13.5px;color:var(--sub)}
+.notice.warn{
+  background:var(--warm-soft);color:var(--warm);
+  border-left-color:var(--warm);
+}
+
+.foot{
+  margin-top:56px;padding-top:18px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--faint);display:flex;justify-content:space-between;
+  gap:10px;flex-wrap:wrap;
+}
+.hist .row{
+  padding:10px 0;border-bottom:1px dashed var(--line);
+  font-size:13.5px;color:var(--sub);
+}
+
 @media (max-width:820px){
   .layout{flex-direction:column}
-  .side{width:auto;flex:none;height:auto;position:static;border-right:none;
-    border-bottom:1px solid var(--line)}
-  .main{padding:22px 18px 50px}
+  .side{
+    width:auto;flex:none;height:auto;position:static;border-right:none;
+    border-bottom:1px solid var(--line);padding:18px 16px;
+  }
+  .main{padding:24px 18px 56px}
   .side ul{display:flex;flex-wrap:wrap;gap:4px}
-  h1{font-size:25px}
+  h1{font-size:26px}
+  .article{font-size:15.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important;animation:none !important}
 }
 """
 
 
 ADMIN_CSS = """
-.admin-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
-.admin-head h1{font-size:27px;margin:0}
+.admin-head{display:flex;align-items:baseline;gap:14px;margin-bottom:8px}
+.admin-head h1{font-size:28px;margin:0}
 .admin-head .t{font-size:12.5px;color:var(--sub)}
-.tabs{display:flex;gap:6px;margin:16px 0 22px;border-bottom:1px solid var(--line);
-  padding-bottom:2px;flex-wrap:wrap}
-.tabs a{padding:7px 14px;border-radius:8px 8px 0 0;font-size:14px;color:var(--sub)}
-.tabs a.on{background:var(--soft);color:var(--accent);font-weight:600}
-.tabs a:hover{text-decoration:none;color:var(--ink)}
-.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
-.metric{background:var(--panel);border:1px solid var(--line);border-radius:12px;
-  padding:16px 18px}
-.metric .k{font-size:12.5px;color:var(--sub);margin-bottom:8px}
-.metric .v{font-size:26px;font-weight:700;line-height:1.1}
+
+.tabs{
+  display:flex;gap:4px;margin:18px 0 26px;border-bottom:1px solid var(--line);
+  padding-bottom:0;flex-wrap:wrap;
+}
+.tabs a{
+  padding:9px 15px;border-radius:9px 9px 0 0;font-size:14px;color:var(--sub);
+  transition:background .15s,color .15s;border-bottom:2px solid transparent;
+}
+.tabs a.on{
+  background:var(--accent-soft);color:var(--accent-ink);font-weight:600;
+  border-bottom-color:var(--accent);
+}
+.tabs a:hover{text-decoration:none;color:var(--ink);background:var(--soft)}
+
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.metric{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 20px;box-shadow:var(--shadow);transition:box-shadow .18s;
+}
+.metric:hover{box-shadow:var(--shadow-lg)}
+.metric .k{font-size:12.5px;color:var(--sub);margin-bottom:9px;font-weight:500}
+.metric .v{font-size:27px;font-weight:800;line-height:1.1;color:var(--ink)}
 .metric .u{font-size:13px;font-weight:400;color:var(--sub);margin-left:3px}
-.metric .s{font-size:12px;color:var(--sub);margin-top:7px}
-.bar{height:7px;border-radius:4px;background:var(--soft);overflow:hidden;margin-top:11px}
-.bar i{display:block;height:100%;border-radius:4px;transition:width .4s}
-.bar i.ok{background:var(--accent)}
-.bar i.warn{background:#e6a23c}
-.bar i.bad{background:#d9534f}
+.metric .s{font-size:12px;color:var(--faint);margin-top:8px}
+.bar{
+  height:8px;border-radius:5px;background:var(--soft);overflow:hidden;margin-top:12px;
+}
+.bar i{display:block;height:100%;border-radius:5px;transition:width .45s ease}
+.bar i.ok{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.bar i.warn{background:linear-gradient(90deg,#d9a441,#c9963c)}
+.bar i.bad{background:linear-gradient(90deg,#c9564a,#b8493c)}
+
 table.t{width:100%;border-collapse:collapse;font-size:13.5px}
-table.t th{text-align:left;font-weight:600;color:var(--sub);font-size:12px;
-  padding:9px 10px;border-bottom:1px solid var(--line)}
-table.t td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-table.t tr:hover td{background:var(--soft)}
-.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px}
-.thumb{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-  overflow:hidden}
-.thumb img{width:100%;height:104px;object-fit:cover;display:block;background:var(--soft)}
-.thumb .m{padding:7px 9px;font-size:11.5px;color:var(--sub);line-height:1.5}
-.thumb .m b{display:block;color:var(--ink);font-size:12px;margin-bottom:2px}
-.drop{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;
-  color:var(--sub);font-size:14px;cursor:pointer;transition:.15s;background:var(--panel)}
-.drop:hover,.drop.over{border-color:var(--accent);color:var(--accent)}
+table.t th{
+  text-align:left;font-weight:600;color:var(--sub);font-size:12px;
+  padding:10px 12px;border-bottom:1px solid var(--line2);
+  text-transform:uppercase;letter-spacing:.5px;
+}
+table.t td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.t tbody tr{transition:background .12s}
+table.t tbody tr:hover td{background:var(--panel2)}
+
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(156px,1fr));gap:14px}
+.thumb{
+  background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  overflow:hidden;box-shadow:var(--shadow);transition:box-shadow .18s,transform .18s;
+}
+.thumb:hover{box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+.thumb img{
+  width:100%;height:108px;object-fit:cover;display:block;background:var(--soft);
+}
+.thumb .m{padding:9px 11px;font-size:11.5px;color:var(--sub);line-height:1.55}
+.thumb .m b{
+  display:block;color:var(--ink);font-size:12px;margin-bottom:3px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+.drop{
+  border:2px dashed var(--line2);border-radius:var(--radius);padding:30px;
+  text-align:center;color:var(--sub);font-size:14px;cursor:pointer;
+  transition:border-color .18s,background .18s,color .18s;background:var(--panel);
+}
+.drop:hover,.drop.over{
+  border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);
+}
 .drop b{color:var(--ink)}
-#pv{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
-#pv img{height:82px;border-radius:8px;border:1px solid var(--line)}
+#pv{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap}
+#pv img{height:86px;border-radius:9px;border:1px solid var(--line);box-shadow:var(--shadow)}
 """
 
 
@@ -415,6 +580,15 @@ def _js(text: str) -> str:
     return (str(text or "").replace("\\", "\\\\").replace("'", "\\'")
             .replace('"', "&quot;").replace("<", "\\x3c").replace(">", "\\x3e")
             .replace("\n", "\\n").replace("\r", ""))
+
+def _csrf_field() -> str:
+    """渲染成隐藏表单域；没登录时也给一个，登录后再校验"""
+    try:
+        tok = csrf_token()
+    except Exception:
+        tok = ""
+    return f'<input type="hidden" name="csrf" value="{tok}">'
+
 
 def _layout(title: str, inner: str, active: str = "", crumb: str = "",
             notice: str = "") -> str:
@@ -442,7 +616,7 @@ def _layout(title: str, inner: str, active: str = "", crumb: str = "",
     else:
         signed = '<a href="/login">登录</a> · <a href="/register">注册</a>'
 
-    return f"""<!DOCTYPE html>
+    _html = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -477,6 +651,7 @@ def _layout(title: str, inner: str, active: str = "", crumb: str = "",
     </div>
   </main>
 </div></body></html>"""
+    return _html.replace("{CSRF_FIELD}", _csrf_field())
 
 
 def page_card(name: str, page: Dict[str, Any]) -> str:
@@ -530,7 +705,7 @@ def view_page(name: str) -> str:
     # 有编辑权限的人可以在详情页直接删除（带二次确认）
     if can_edit(CUR_USER["v"]):
         edit_btn += (f'<form method="post" action="/admin/pages/delete" style="display:inline" '
-                     f'onsubmit="return confirm(\'确定删除「{_js(name)}」？删除后可在回收站恢复\')">'
+                     f'onsubmit="return confirm(\'确定删除「{_js(name)}」？删除后可在回收站恢复\')">{{CSRF_FIELD}}'
                      f'<input type="hidden" name="name" value="{_esc(name)}">'
                      f'<button class="btn" style="color:#b4573c;border-color:#e0b9ad">'
                      f'删除</button></form>')
@@ -1050,7 +1225,7 @@ def view_admin_media(msg: str = "", err: str = "") -> str:
         f'<div class="m"><b>{_esc(it["name"])}</b>'
         f'{it["size"]/1024:.0f}KB · 用 {int(it.get("uses", 0))} 次'
         f'<form method="post" action="/admin/media/delete" style="margin-top:6px" '
-        f'onsubmit="return confirm(\'删除这张图片？\')">'
+        f'onsubmit="return confirm(\'删除这张图片？\')">{{CSRF_FIELD}}'
         f'<input type="hidden" name="name" value="{_esc(it["name"])}">'
         f'<button class="mini no" style="width:100%">删除</button></form></div></div>'
         for it in st["items"])
@@ -1075,7 +1250,7 @@ def view_admin_media(msg: str = "", err: str = "") -> str:
     </p>
     <div style="margin-top:16px;display:flex;justify-content:flex-end">
       <form method="post" action="/admin/media/clear"
-        onsubmit="return confirm('确定清空媒体库？所有上传图片都会被删除')">
+        onsubmit="return confirm('确定清空媒体库？所有上传图片都会被删除')">{{CSRF_FIELD}}
         <button class="mini no">清空媒体库</button>
       </form>
     </div>
@@ -1135,7 +1310,7 @@ def view_admin_pages() -> str:
         f'<td class="row-actions"><a class="mini" href="/edit/{quote(n)}">编辑</a>'
         f'<a class="mini" href="/history/{quote(n)}">历史</a>'
         f'<form method="post" action="/admin/pages/delete" '
-        f'onsubmit="return confirm(\'确定删除词条「{_js(n)}」？\\n删除后不可恢复（建议先导出备份）\')">'
+        f'onsubmit="return confirm(\'确定删除词条「{_js(n)}」？\\n删除后不可恢复（建议先导出备份）\')">{{CSRF_FIELD}}'
         f'<input type="hidden" name="name" value="{_esc(n)}">'
         f'<button class="mini no">删除</button></form></td></tr>'
         for n, p in pages)
@@ -1146,7 +1321,7 @@ def view_admin_pages() -> str:
       <a class="btn primary" href="/new">＋ 新建词条</a>
       <a class="btn" href="/admin/pages/deleted">🗑 回收站</a>
       <form method="post" action="/admin/pages/clear" style="margin-left:auto"
-        onsubmit="return confirm('确定清空所有词条？会先放进回收站')">
+        onsubmit="return confirm('确定清空所有词条？会先放进回收站')">{{CSRF_FIELD}}
         <button class="mini no">清空所有词条</button>
       </form>
     </div>
@@ -1173,11 +1348,25 @@ AUTH_CSS = """
 .auth button{width:100%;padding:12px;border:none;border-radius:9px;
   background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer}
 .auth .foot2{text-align:center;font-size:13px;color:var(--sub);margin-top:18px;line-height:2}
-.auth .cap{display:flex;align-items:center;gap:10px;margin-bottom:15px}
-.auth .cap .q{flex:1;background:var(--soft);border-radius:9px;padding:11px 14px;
-  font-size:16px;font-weight:700;letter-spacing:1px;text-align:center;
-  font-family:ui-monospace,Menlo,monospace}
-.auth .cap input{width:110px;text-align:center}
+.auth .hint{font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5}
+.auth .capbox{margin-bottom:18px}
+.auth .capbox>label{display:block;font-size:12.5px;color:var(--sub);margin-bottom:7px}
+.auth .caprow{display:flex;align-items:stretch;gap:9px}
+.auth .caprow .q{
+  flex:1;background:linear-gradient(135deg,var(--accent-soft),var(--accent2-soft));
+  border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+  font-size:15px;font-weight:700;color:var(--accent-ink);text-align:center;
+  display:flex;align-items:center;justify-content:center;
+  font-family:ui-monospace,Menlo,Consolas,monospace;
+  letter-spacing:.5px;line-height:1.4;
+}
+.auth .caprow input{
+  width:112px;text-align:center;font-size:16px;font-weight:600;
+  padding:11px 8px;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel);color:var(--ink);outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+.auth .caprow input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11.5px;
   background:var(--soft);color:var(--accent);margin-left:8px}
 .badge.owner{background:#fde8c8;color:#a05a00}
@@ -1193,28 +1382,48 @@ AUTH_CSS = """
 """
 
 
-def view_register(msg: str = "", err: str = "") -> str:
-    q, tok = new_captcha()
+def view_register(msg: str = "", err: str = "", ip: str = "") -> str:
+    q, tok = new_captcha(ip)
+    if not q:
+        err = err or "请求太频繁，请稍等一分钟再试"
     notice = f'<div class="notice">{_esc(msg)}</div>' if msg else ""
     warn = f'<div class="notice warn">{_esc(err)}</div>' if err else ""
+    # 常见邮箱域名，给浏览器一个提示列表
+    prov_hint = "、".join(sorted({v["name"] for v in MAIL_PROVIDERS.values()}))[:120]
     inner = f"""
     <div class="auth">
       <h1>注册账号</h1>
       <div class="sub2">注册后可申请 Cookie，拿到 Cookie 才能编辑百科</div>
       {notice}{warn}
-      <form method="post" action="/register">
-        <div class="field"><label>用户名（3~20 位，字母/数字/下划线）</label>
-          <input name="username" required minlength="3" maxlength="20" autocomplete="username"></div>
-        <div class="field"><label>邮箱（用于接收验证码）</label>
-          <input name="email" type="email" required autocomplete="email"></div>
-        <div class="field"><label>密码（至少 8 位，不能纯数字）</label>
-          <input name="password" type="password" required minlength="8" autocomplete="new-password"></div>
-        <div class="field"><label>确认密码</label>
-          <input name="password2" type="password" required minlength="8" autocomplete="new-password"></div>
-        <div class="cap">
-          <div class="q">{_esc(q)}</div>
-          <input name="captcha" required placeholder="答案" inputmode="numeric">
-          <input type="hidden" name="ctoken" value="{_esc(tok)}">
+      <form method="post" action="/register">{{CSRF_FIELD}}
+        <div class="field">
+          <label>用户名</label>
+          <input name="username" required minlength="3" maxlength="20"
+                 autocomplete="username" placeholder="3~20 位，字母/数字/下划线/中文">
+        </div>
+        <div class="field">
+          <label>邮箱</label>
+          <input name="email" type="email" required autocomplete="email"
+                 placeholder="用于接收验证码">
+          <div class="hint">支持 QQ、163、126、Gmail、Outlook 等常见邮箱</div>
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input name="password" type="password" required minlength="8"
+                 autocomplete="new-password" placeholder="至少 8 位，不能是纯数字">
+        </div>
+        <div class="field">
+          <label>确认密码</label>
+          <input name="password2" type="password" required minlength="8"
+                 autocomplete="new-password" placeholder="再输一次">
+        </div>
+        <div class="capbox">
+          <label>人机验证</label>
+          <div class="caprow">
+            <div class="q">{_esc(q) or "请求过于频繁"}</div>
+            <input name="captcha" required placeholder="答案" autocomplete="off">
+            <input type="hidden" name="ctoken" value="{_esc(tok)}">
+          </div>
         </div>
         <button type="submit">注册</button>
       </form>
@@ -1231,7 +1440,7 @@ def view_login(msg: str = "", err: str = "") -> str:
       <h1>登录</h1>
       <div class="sub2">用注册时的账号密码登录；也可以直接用站长发的 Cookie</div>
       {notice}{warn}
-      <form method="post" action="/login" autocomplete="on">
+      <form method="post" action="/login" autocomplete="on">{{CSRF_FIELD}}
         <div class="field"><label>用户名 或 邮箱</label>
           <input name="account" required autocomplete="username"
                  placeholder="注册时填的用户名 / 邮箱"></div>
@@ -1245,7 +1454,7 @@ def view_login(msg: str = "", err: str = "") -> str:
         <span style="font-size:12px;color:var(--sub)">或者已经有 Cookie</span>
         <div style="flex:1;height:1px;background:var(--line)"></div>
       </div>
-      <form method="post" action="/login-cookie">
+      <form method="post" action="/login-cookie">{{CSRF_FIELD}}
         <div class="field"><label>Cookie 令牌（站长审核通过后发给你）</label>
           <input name="cookie" placeholder="粘贴 Cookie 令牌"></div>
         <button type="submit" style="background:var(--panel);color:var(--ink);
@@ -1279,7 +1488,7 @@ def view_apply() -> str:
         body = '<div class="notice warn">上次申请被拒绝了，可以补充理由再申请一次。</div>'
     if role not in (ROLE_OWNER, ROLE_EDITOR) and status != "pending":
         body += """
-        <form method="post" action="/apply">
+        <form method="post" action="/apply">{{CSRF_FIELD}}
           <div class="field"><label>申请理由（说说你想写什么内容）</label>
             <textarea name="reason" required></textarea></div>
           <button type="submit">提交申请</button>
@@ -1306,11 +1515,11 @@ def view_admin_cookies(msg: str = "", err: str = "") -> str:
                  f'<td style="max-width:280px">{_esc(it["reason"] or "-")}</td>'
                  f'<td>{datetime.fromtimestamp(float(it["time"])).strftime("%m-%d %H:%M")}</td>'
                  f'<td class="row-actions">'
-                 f'<form method="post" action="/admin/cookie">'
+                 f'<form method="post" action="/admin/cookie">{{CSRF_FIELD}}'
                  f'<input type="hidden" name="uid" value="{_esc(it["uid"])}">'
                  f'<input type="hidden" name="action" value="approve">'
                  f'<button class="mini ok">批准</button></form>'
-                 f'<form method="post" action="/admin/cookie">'
+                 f'<form method="post" action="/admin/cookie">{{CSRF_FIELD}}'
                  f'<input type="hidden" name="uid" value="{_esc(it["uid"])}">'
                  f'<input type="hidden" name="action" value="reject">'
                  f'<button class="mini no">拒绝</button></form></td></tr>')
@@ -1325,27 +1534,27 @@ def view_admin_cookies(msg: str = "", err: str = "") -> str:
             acts = ('<span style="font-size:12px;color:var(--sub)">'
                     '站长账号（角色不可改）</span>')
         else:
-            acts = (f'<form method="post" action="/admin/cookie">'
+            acts = (f'<form method="post" action="/admin/cookie">{{CSRF_FIELD}}'
                     f'<input type="hidden" name="uid" value="{uid_v}">'
                     f'<input type="hidden" name="action" value="grant">'
                     f'<button class="mini ok">直接发放</button></form>'
-                    f'<form method="post" action="/admin/cookie">'
+                    f'<form method="post" action="/admin/cookie">{{CSRF_FIELD}}'
                     f'<input type="hidden" name="uid" value="{uid_v}">'
                     f'<input type="hidden" name="action" value="revoke">'
                     f'<button class="mini no">收回</button></form>')
             if role != ROLE_EDITOR:
-                acts += (f'<form method="post" action="/admin/cookie">'
+                acts += (f'<form method="post" action="/admin/cookie">{{CSRF_FIELD}}'
                          f'<input type="hidden" name="uid" value="{uid_v}">'
                          f'<input type="hidden" name="action" value="set_editor">'
                          f'<button class="mini">设为编辑</button></form>')
             if role != ROLE_GUEST:
-                acts += (f'<form method="post" action="/admin/cookie">'
+                acts += (f'<form method="post" action="/admin/cookie">{{CSRF_FIELD}}'
                          f'<input type="hidden" name="uid" value="{uid_v}">'
                          f'<input type="hidden" name="action" value="set_guest">'
                          f'<button class="mini">降为访客</button></form>')
             acts += (f'<form method="post" action="/admin/cookie" '
                      f'onsubmit="return confirm(\'删除账号 {_js(u.get("username"))}？'
-                     f'该账号会话会立即失效，不可恢复\')">'
+                     f'该账号会话会立即失效，不可恢复\')">{{CSRF_FIELD}}'
                      f'<input type="hidden" name="uid" value="{uid_v}">'
                      f'<input type="hidden" name="action" value="delete">'
                      f'<button class="mini no">删除账号</button></form>')
@@ -1531,15 +1740,68 @@ def password_problem(password: str) -> str:
     return ""
 
 
+# 常见邮箱服务商的 SMTP 参数，用户只需填账号和授权码
+MAIL_PROVIDERS: Dict[str, Dict[str, Any]] = {
+    "qq.com": {"host": "smtp.qq.com", "port": 465, "ssl": True, "name": "QQ邮箱"},
+    "foxmail.com": {"host": "smtp.qq.com", "port": 465, "ssl": True, "name": "Foxmail"},
+    "vip.qq.com": {"host": "smtp.qq.com", "port": 465, "ssl": True, "name": "QQ邮箱VIP"},
+    "163.com": {"host": "smtp.163.com", "port": 465, "ssl": True, "name": "网易163"},
+    "126.com": {"host": "smtp.126.com", "port": 465, "ssl": True, "name": "网易126"},
+    "yeah.net": {"host": "smtp.yeah.net", "port": 465, "ssl": True, "name": "网易yeah"},
+    "sina.com": {"host": "smtp.sina.com", "port": 465, "ssl": True, "name": "新浪邮箱"},
+    "sohu.com": {"host": "smtp.sohu.com", "port": 465, "ssl": True, "name": "搜狐邮箱"},
+    "aliyun.com": {"host": "smtp.aliyun.com", "port": 465, "ssl": True, "name": "阿里云邮箱"},
+    "gmail.com": {"host": "smtp.gmail.com", "port": 465, "ssl": True, "name": "Gmail"},
+    "outlook.com": {"host": "smtp.office365.com", "port": 587, "ssl": False, "name": "Outlook"},
+    "hotmail.com": {"host": "smtp.office365.com", "port": 587, "ssl": False, "name": "Hotmail"},
+    "live.com": {"host": "smtp.office365.com", "port": 587, "ssl": False, "name": "Live"},
+    "yahoo.com": {"host": "smtp.mail.yahoo.com", "port": 465, "ssl": True, "name": "Yahoo"},
+    "icloud.com": {"host": "smtp.mail.me.com", "port": 587, "ssl": False, "name": "iCloud"},
+    "139.com": {"host": "smtp.139.com", "port": 465, "ssl": True, "name": "移动139"},
+    "189.cn": {"host": "smtp.189.cn", "port": 465, "ssl": True, "name": "电信189"},
+    "wo.cn": {"host": "smtp.wo.cn", "port": 465, "ssl": True, "name": "联通沃邮箱"},
+}
+
+
+def mail_provider(email: str) -> Optional[Dict[str, Any]]:
+    """根据邮箱域名推断 SMTP 服务商"""
+    domain = (email or "").split("@")[-1].lower().strip()
+    if not domain:
+        return None
+    if domain in MAIL_PROVIDERS:
+        return MAIL_PROVIDERS[domain]
+    # 企业邮箱：尝试 mail.<domain> 作为 SMTP
+    return None
+
+
 def _smtp_config() -> Dict[str, str]:
-    return {k: str(v) for k, v in (load_config().get("smtp") or {}).items()}
+    """取 SMTP 配置；缺 host 时按 from/user 的域名自动推断"""
+    cfg = {k: str(v) for k, v in (load_config().get("smtp") or {}).items()}
+    if not cfg.get("host"):
+        guess = mail_provider(cfg.get("from") or cfg.get("user") or "")
+        if guess:
+            cfg["host"] = guess["host"]
+            cfg["port"] = cfg.get("port") or str(guess["port"])
+            cfg["ssl"] = cfg.get("ssl") or ("1" if guess["ssl"] else "0")
+            cfg["_provider"] = guess["name"]
+    return cfg
+
+
+def smtp_status() -> str:
+    """给后台显示的发信状态描述"""
+    cfg = _smtp_config()
+    if not cfg.get("host"):
+        return "未配置（验证码写在本地 outbox，可在后台查看）"
+    name = cfg.get("_provider") or cfg.get("host")
+    return f"{name} · {cfg.get('host')}:{cfg.get('port')}"
 
 
 def render_code_mail(to: str, code: str, username: str) -> str:
     return (f"【{SITE_NAME}】注册验证码\n\n"
             f"{username} 你好，你的验证码是：{code}\n"
             f"有效期 {CODE_TTL // 60} 分钟，请勿转告他人。\n\n"
-            f"如果不是你本人操作，忽略本邮件即可。\n{SITE_NAME} {PUBLIC_URL}")
+            f"如果不是你本人操作，忽略本邮件即可。\n"
+            f"\n--\n{SITE_NAME} {PUBLIC_URL}")
 
 
 def send_code_email(to: str, code: str, username: str = "") -> Tuple[bool, str]:
@@ -1571,8 +1833,16 @@ def send_code_email(to: str, code: str, username: str = "") -> Tuple[bool, str]:
             _MAIL.update({"last": _now(), "error": ""})
             return True, f"验证码已发到 {to}"
         except Exception as e:
-            logger.warning(f"[wiki] 发邮件失败: {e}")
-            _MAIL.update({"last": _now(), "error": str(e)[:200]})
+            err = str(e)[:200]
+            logger.warning(f"[wiki] 发邮件失败: {err}")
+            _MAIL.update({"last": _now(), "error": err})
+            # 失败也落 outbox，保证用户不会卡在验证页
+            try:
+                fn = MAIL_DIR / f"{int(_now())}_{secrets.token_hex(3)}.txt"
+                fn.write_text(f"To: {to}\n失败原因: {err}\n\n{text}\n", encoding="utf-8")
+            except Exception:
+                pass
+            return True, f"发信失败（{err[:40]}），已写入本地 outbox，请联系站长"
     try:
         fn = MAIL_DIR / f"{int(_now())}_{secrets.token_hex(3)}.txt"
         fn.write_text(f"To: {to}\n\n{text}\n", encoding="utf-8")
@@ -1585,45 +1855,119 @@ def new_email_code() -> str:
     return "".join(random.choice("0123456789") for _ in range(CODE_LEN))
 
 
-def new_captcha() -> Tuple[str, str]:
-    a, b = random.randint(6, 19), random.randint(3, 12)
-    op = random.choice(["+", "-", "×"])
-    if op == "+":
-        ans = a + b
-    elif op == "-":
-        a, b = max(a, b), min(a, b)
-        ans = a - b
+# ── 人机验证 ──
+# 三道题随机出，答案只在服务端内存里，token 一次性、5 分钟过期。
+# 另加「同 IP 每分钟最多出 20 题」的限制，防脚本刷题。
+CAPTCHA_ISSUE: Dict[str, List[float]] = {}
+CAPTCHA_ISSUE_PER_MIN = 20
+
+CN_DIGITS = "零一二三四五六七八九"
+
+
+def _num_cn(n: int) -> str:
+    """小数字转中文，让机器视觉识别更难，人眼反而更简单"""
+    if n < 10:
+        return CN_DIGITS[n]
+    if n < 20:
+        return "十" + (CN_DIGITS[n % 10] if n % 10 else "")
+    return CN_DIGITS[n // 10] + "十" + (CN_DIGITS[n % 10] if n % 10 else "")
+
+
+def new_captcha(ip: str = "") -> Tuple[str, str]:
+    """出一道验证题，返回 (题干, token)
+
+    题型随机：
+      1. 算术：中文数字运算，例如「十二 加 七 = ?」
+      2. 填空：给出数列规律，例如「3, 6, 9, 12, ?」
+      3. 文字：从一串字符里找第 N 个，例如「甲7乙9丙2，第3个是什么」
+    """
+    # 同 IP 出题限流
+    if ip:
+        now = _now()
+        hist = [t for t in CAPTCHA_ISSUE.get(ip, []) if now - t < 60]
+        if len(hist) >= CAPTCHA_ISSUE_PER_MIN:
+            return "", ""
+        hist.append(now)
+        CAPTCHA_ISSUE[ip] = hist
+
+    kind = random.choice(["arith", "arith", "series", "find"])
+    if kind == "arith":
+        op = random.choice(["+", "-", "×"])
+        if op == "×":
+            a, b = random.randint(2, 9), random.randint(2, 9)
+            ans = a * b
+            q = f"{_num_cn(a)} 乘 {_num_cn(b)} = ?"
+        else:
+            a, b = random.randint(6, 20), random.randint(2, 12)
+            if op == "-":
+                a, b = max(a, b), min(a, b)
+                ans = a - b
+                q = f"{_num_cn(a)} 减 {_num_cn(b)} = ?"
+            else:
+                ans = a + b
+                q = f"{_num_cn(a)} 加 {_num_cn(b)} = ?"
+    elif kind == "series":
+        start = random.randint(1, 6)
+        step = random.randint(2, 5)
+        nums = [start + step * i for i in range(4)]
+        ans = nums[3]
+        q = "，".join(str(x) for x in nums[:3]) + "，?  （每次加 " + str(step) + "）"
     else:
-        a, b = random.randint(3, 9), random.randint(2, 9)
-        ans = a * b
-    token = secrets.token_urlsafe(10)
-    _CAPTCHA[token] = {"ans": ans, "time": _now()}
+        pool = "甲乙丙丁戊己庚辛壬癸"
+        letters = random.sample(pool, 4)
+        digits = [random.randint(1, 9) for _ in range(4)]
+        seq = "".join(f"{letters[i]}{digits[i]}" for i in range(4))
+        pos = random.randint(1, 4)
+        ans = digits[pos - 1]
+        q = f"{seq} 中第 {_num_cn(pos)} 个数字是几？"
+
+    token = secrets.token_urlsafe(12)
+    _CAPTCHA[token] = {"ans": str(ans), "time": _now(), "kind": kind}
+    # 清理过期题，避免内存无限增长
     for k in [k for k, v in _CAPTCHA.items() if _now() - v["time"] > CAPTCHA_TTL]:
         _CAPTCHA.pop(k, None)
-    return f"{a} {op} {b} = ?", token
+    return q, token
 
 
 def check_captcha(token: str, answer: str) -> Tuple[bool, str]:
     item = _CAPTCHA.pop((token or "").strip(), None)
     if not item:
-        return False, "人机验证已过期，请刷新重试"
+        return False, "验证已过期，请刷新重试"
     if _now() - item["time"] > CAPTCHA_TTL:
-        return False, "人机验证已过期，请刷新重试"
-    try:
-        if int(str(answer).strip()) != int(item["ans"]):
-            return False, "计算结果不对"
-    except Exception:
-        return False, "请填写计算结果"
+        return False, "验证已过期，请刷新重试"
+    got = str(answer or "").strip().replace(" ", "")
+    # 允许填阿拉伯数字，也允许填中文数字
+    norm = got
+    if norm and all(ch in CN_DIGITS + "十" for ch in norm):
+        # 中文数字转回阿拉伯数字
+        try:
+            if "十" in norm:
+                left, _, right = norm.partition("十")
+                val = (CN_DIGITS.index(left) if left else 1) * 10
+                val += CN_DIGITS.index(right) if right else 0
+                norm = str(val)
+            else:
+                norm = str(CN_DIGITS.index(norm))
+        except Exception:
+            pass
+    if norm != str(item["ans"]):
+        return False, "答案不对，再试一次"
     return True, ""
 
 
-def new_session(user: Dict[str, Any]) -> str:
+def new_session(user: Dict[str, Any], ip: str = "", ua: str = "") -> str:
     token = secrets.token_urlsafe(32)
     with _LOCK:
         data = load_sessions()
         data["sessions"][token] = {"uid": user["uid"],
                                    "username": user.get("username", ""),
-                                   "time": _now()}
+                                   "time": _now(),
+                                   "ip": (ip or "")[:64],
+                                   "ua": (ua or "")[:200]}
+        # 顺手清理过期会话，避免文件无限增长
+        cutoff = _now() - COOKIE_MAX_AGE
+        data["sessions"] = {k: v for k, v in data["sessions"].items()
+                            if float(v.get("time", 0)) > cutoff}
         save_sessions(data)
     return token
 
@@ -1766,6 +2110,14 @@ def can_edit(user: Optional[Dict[str, Any]]) -> bool:
     return effective_role(user) in (ROLE_OWNER, ROLE_EDITOR)
 
 
+def _is_https(req: Request) -> bool:
+    """判断当前请求是否走 HTTPS（决定 cookie 要不要加 secure）"""
+    proto = req.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    if proto:
+        return proto == "https"
+    return req.url.scheme == "https"
+
+
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "SAMEORIGIN",
@@ -1794,6 +2146,37 @@ async def _auth_middleware(request: Request, call_next):
     resp = await call_next(request)
     resp.headers.update(SECURITY_HEADERS)
     return resp
+
+
+
+# ── CSRF ──
+# 站点内所有 POST 表单都带一个隐藏字段，值从会话派生。
+# 校验失败直接拒绝，防止第三方页面替用户提交。
+def csrf_token() -> str:
+    """由站长口令 + 当前会话派生，同一会话内稳定"""
+    user = CUR_USER["v"] or {}
+    seed = str(user.get("uid") or "") + "|" + str(current_token() or "")
+    return hmac.new(seed.encode("utf-8"), b"csrf", hashlib.sha256).hexdigest()[:32]
+
+
+def csrf_ok(form_token: str) -> bool:
+    expect = csrf_token()
+    if not expect:
+        return False
+    return hmac.compare_digest(str(form_token or ""), expect)
+
+
+def _csrf_guard(form_token: str) -> Optional[HTMLResponse]:
+    """已登录用户的 POST 一律校验 CSRF；登录/注册阶段还没有会话，跳过"""
+    user = CUR_USER["v"]
+    if not user:
+        return None
+    if csrf_ok(form_token):
+        return None
+    return HTMLResponse(
+        _layout("请求被拒绝",
+                '<div class="notice warn">页面已过期或来源不合法，请刷新后重试。</div>'),
+        status_code=403)
 
 
 def _require_editor() -> Optional[HTMLResponse]:
@@ -1874,8 +2257,8 @@ async def route_new(title: str = "") -> HTMLResponse:
 
 @app.post("/new", response_class=HTMLResponse)
 async def route_new_post(title: str = Form(...), tags: str = Form(""),
-                         body: str = Form(...)) -> HTMLResponse:
-    blocked = _require_editor()
+                         body: str = Form(...), csrf: str = Form("")) -> HTMLResponse:
+    blocked = _csrf_guard(csrf) or _require_editor()
     if blocked:
         return blocked
     title = (title or "").strip()[:MAX_TITLE]
@@ -1907,8 +2290,8 @@ async def route_edit(name: str) -> HTMLResponse:
 
 @app.post("/edit/{name}", response_class=HTMLResponse)
 async def route_edit_post(name: str, tags: str = Form(""),
-                          body: str = Form(...)) -> HTMLResponse:
-    blocked = _require_editor()
+                          body: str = Form(...), csrf: str = Form("")) -> HTMLResponse:
+    blocked = _csrf_guard(csrf) or _require_editor()
     if blocked:
         return blocked
     name = unquote(name)
@@ -2073,34 +2456,40 @@ async def route_api_page(name: str) -> JSONResponse:
 # ============================================================
 
 @app.get("/register", response_class=HTMLResponse)
-async def route_register(msg: str = "", err: str = "") -> HTMLResponse:
-    return HTMLResponse(view_register(msg, err))
+async def route_register(req: Request, msg: str = "", err: str = "") -> HTMLResponse:
+    ip = (req.client.host if req.client else "") or ""
+    return HTMLResponse(view_register(msg, err, ip))
 
 
 @app.post("/register", response_class=HTMLResponse)
-async def route_register_post(username: str = Form(""), email: str = Form(""),
-                              password: str = Form(""), password2: str = Form(""),
-                              captcha: str = Form(""), ctoken: str = Form("")):
+async def route_register_post(req: Request, username: str = Form(""),
+                              email: str = Form(""), password: str = Form(""),
+                              password2: str = Form(""), captcha: str = Form(""),
+                              ctoken: str = Form("")):
+    ip = (req.client.host if req.client else "") or ""
     username = (username or "").strip()
     email = (email or "").strip().lower()
     # 1) 人机验证
     ok_cap, why_cap = check_captcha(ctoken, captcha)
     if not ok_cap:
-        return HTMLResponse(view_register(err=why_cap), status_code=400)
+        return HTMLResponse(view_register(err=why_cap, ip=ip), status_code=400)
     # 2) 字段校验
     if not re.fullmatch(r"[A-Za-z0-9_\u4e00-\u9fa5]{3,20}", username):
-        return HTMLResponse(view_register(err="用户名 3~20 位，字母/数字/下划线/中文"), status_code=400)
+        return HTMLResponse(view_register(err="用户名 3~20 位，字母/数字/下划线/中文", ip=ip), status_code=400)
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-        return HTMLResponse(view_register(err="邮箱格式不对"), status_code=400)
+        return HTMLResponse(view_register(err="邮箱格式不对", ip=ip), status_code=400)
+    # 已知服务商给出更明确的操作提示；未知域名也允许，用户可让站长手动配 SMTP
+    prov = mail_provider(email)
+    prov_name = (prov or {}).get("name") or "该邮箱"
     problem = password_problem(password)
     if problem:
-        return HTMLResponse(view_register(err=problem), status_code=400)
+        return HTMLResponse(view_register(err=problem, ip=ip), status_code=400)
     if password != password2:
-        return HTMLResponse(view_register(err="两次密码不一致"), status_code=400)
+        return HTMLResponse(view_register(err="两次密码不一致", ip=ip), status_code=400)
     if find_user(username):
-        return HTMLResponse(view_register(err="这个用户名已被注册"), status_code=400)
+        return HTMLResponse(view_register(err="这个用户名已被注册", ip=ip), status_code=400)
     if find_user(email):
-        return HTMLResponse(view_register(err="这个邮箱已注册过"), status_code=400)
+        return HTMLResponse(view_register(err="这个邮箱已注册过", ip=ip), status_code=400)
 
     # 3) 建账号（先不激活，等邮箱验证）
     pw_hash, salt = hash_password(password)
@@ -2130,7 +2519,7 @@ async def route_verify(uid: str = "", msg: str = "", err: str = "") -> HTMLRespo
       <h1>邮箱验证</h1>
       <div class="sub2">验证码已生成，{CODE_TTL // 60} 分钟内有效</div>
       {notice}{warn}
-      <form method="post" action="/verify">
+      <form method="post" action="/verify">{{CSRF_FIELD}}
         <input type="hidden" name="uid" value="{_esc(uid)}">
         <div class="field"><label>邮箱验证码（6 位数字）</label>
           <input name="code" inputmode="numeric" maxlength="6" required
@@ -2204,23 +2593,25 @@ async def route_login_post(req: Request, account: str = Form(""),
     if not user.get("email_verified"):
         return RedirectResponse(f"/verify?uid={user['uid']}&err=" + quote("请先验证邮箱"),
                                 status_code=303)
-    token = new_session(user)
+    token = new_session(user, ip=ip,
+                        ua=req.headers.get("user-agent", ""))
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(COOKIE_NAME, token, max_age=COOKIE_MAX_AGE,
-                    httponly=True, samesite="lax")
+                    httponly=True, samesite="lax", secure=_is_https(req))
     logger.info(f"[wiki] 登录：{user.get('username')}")
     return resp
 
 
 @app.post("/login-cookie", response_class=HTMLResponse)
-async def route_login_cookie_post(cookie: str = Form("")):
+async def route_login_cookie_post(req: Request, cookie: str = Form("")):
     user = live_cookie((cookie or "").strip())
     if not user:
         return HTMLResponse(view_login(err="Cookie 无效或已被收回"), status_code=400)
-    token = new_session(user)
+    ip = (req.client.host if req.client else "") or ""
+    token = new_session(user, ip=ip, ua=req.headers.get("user-agent", ""))
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(COOKIE_NAME, token, max_age=COOKIE_MAX_AGE,
-                    httponly=True, samesite="lax")
+                    httponly=True, samesite="lax", secure=_is_https(req))
     logger.info(f"[wiki] Cookie 登录：{user.get('username')}")
     return resp
 
@@ -2242,7 +2633,10 @@ async def route_apply() -> HTMLResponse:
 
 
 @app.post("/apply", response_class=HTMLResponse)
-async def route_apply_post(reason: str = Form("")):
+async def route_apply_post(reason: str = Form(""), csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
     user = CUR_USER["v"]
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -2263,8 +2657,11 @@ async def route_admin_cookies(msg: str = "", err: str = "") -> HTMLResponse:
 
 
 @app.post("/admin/pages/delete")
-async def route_admin_page_delete(name: str = Form("")):
+async def route_admin_page_delete(name: str = Form(""), csrf: str = Form("")):
     """删除词条（站长或编辑）"""
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
     if not can_edit(CUR_USER["v"]):
         return RedirectResponse("/login", status_code=303)
     name = (name or "").strip()
@@ -2304,7 +2701,7 @@ async def route_admin_pages_deleted() -> HTMLResponse:
                  f'<td>{len(str((it.get("page") or {}).get("body") or ""))}</td>'
                  f'<td>{_esc(it.get("by") or "-")}</td>'
                  f'<td>{datetime.fromtimestamp(float(it.get("time", 0))).strftime("%m-%d %H:%M")}</td>'
-                 f'<td class="row-actions"><form method="post" action="/admin/pages/restore">'
+                 f'<td class="row-actions"><form method="post" action="/admin/pages/restore">{{CSRF_FIELD}}'
                  f'<input type="hidden" name="name" value="{_esc(it.get("name"))}">'
                  f'<button class="mini ok">恢复</button></form></td></tr>')
     inner = f"""
@@ -2319,7 +2716,10 @@ async def route_admin_pages_deleted() -> HTMLResponse:
 
 
 @app.post("/admin/pages/restore")
-async def route_admin_page_restore(name: str = Form("")):
+async def route_admin_page_restore(name: str = Form(""), csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
     if not can_edit(CUR_USER["v"]):
         return RedirectResponse("/login", status_code=303)
     name = (name or "").strip()
@@ -2342,8 +2742,11 @@ async def route_admin_page_restore(name: str = Form("")):
 
 
 @app.post("/admin/media/delete")
-async def route_admin_media_delete(name: str = Form("")):
+async def route_admin_media_delete(name: str = Form(""), csrf: str = Form("")):
     """删除上传的图片（同时清掉媒体索引）"""
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
     if not can_edit(CUR_USER["v"]):
         return RedirectResponse("/login", status_code=303)
     safe = Path(name or "").name
@@ -2364,8 +2767,11 @@ async def route_admin_media_delete(name: str = Form("")):
 
 
 @app.post("/admin/pages/clear")
-async def route_admin_pages_clear():
+async def route_admin_pages_clear(csrf: str = Form("")):
     """危险操作：清空所有词条（仅站长，会先备份到回收站）"""
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
     if not is_owner(CUR_USER["v"]):
         return RedirectResponse("/admin/pages?err=" + quote("只有站长能清空词条"),
                                 status_code=303)
@@ -2390,8 +2796,11 @@ async def route_admin_pages_clear():
 
 
 @app.post("/admin/media/clear")
-async def route_admin_media_clear():
+async def route_admin_media_clear(csrf: str = Form("")):
     """清空媒体库（仅站长）"""
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
     if not is_owner(CUR_USER["v"]):
         return RedirectResponse("/admin/media?err=" + quote("只有站长能清空媒体库"),
                                 status_code=303)
@@ -2410,8 +2819,12 @@ async def route_admin_media_clear():
 
 
 @app.post("/admin/cookie", response_class=HTMLResponse)
-async def route_admin_cookie_action(uid: str = Form(""), action: str = Form("")):
+async def route_admin_cookie_action(uid: str = Form(""), action: str = Form(""),
+                                    csrf: str = Form("")) -> HTMLResponse:
     """站长操作：approve/reject 申请、grant 直接发、revoke 收回"""
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
     blocked = _require_owner()
     if blocked:
         return blocked
