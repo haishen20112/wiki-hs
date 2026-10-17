@@ -15,11 +15,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import html
 import json
 import os
+import random
 import re
 import secrets
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -109,11 +113,158 @@ def load_config() -> Dict[str, Any]:
 CONFIG: Dict[str, Any] = {}
 EDIT_TOKEN = ""
 COOKIE_NAME = "wiki_token"
+CUR_SESSION: Dict[str, Any] = {"v": ""}   # 当前请求的会话 token
 
 
 # ============================================================
 # Markdown-lite（够用就行：标题/粗体/斜体/代码/列表/链接/引用）
 # ============================================================
+
+
+# ============================================================
+# 安全：SVG 消毒、上传限流、审计日志
+# ============================================================
+
+# SVG 里可能藏脚本，上传前剥掉危险构造（保留正常图形）
+_SVG_DANGER_TAGS = ("script", "iframe", "object", "embed", "handler",
+                    "listener", "set", "animate", "foreignobject", "use")
+_SVG_DANGER_ATTR = re.compile(
+    r'\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|' + "'" + r"[^']*" + "'" + r"|[^\s>]+)", re.I)
+_SVG_JS_URL = re.compile(
+    r'(?:href|xlink:href|src|action)\s*=\s*["' + "'" + r']?\s*'
+    r'(?:javascript|data:text/html|vbscript):[^"\'>]*', re.I)
+_SVG_TAG_BLOCK = re.compile(
+    r"<(?:script|iframe|object|embed|foreignObject|animate|set|handler|listener)\b"
+    r"[^>]*>.*?</(?:script|iframe|object|embed|foreignObject|animate|set|handler|listener)\s*>",
+    re.I | re.S)
+_SVG_TAG_SELF = re.compile(
+    r"<(?:script|iframe|object|embed|foreignObject|animate|set|handler|listener)\b[^>]*/?>",
+    re.I)
+
+
+def sanitize_svg(raw: bytes) -> Optional[bytes]:
+    """清洗 SVG：去掉脚本、事件属性、javascript: 链接。
+
+    返回清洗后的字节；若清洗后不含 <svg 则认为不是有效 SVG，返回 None。
+    """
+    try:
+        text = raw.decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    if "<svg" not in text.lower():
+        return None
+    # 1) 删整段危险标签
+    text = _SVG_TAG_BLOCK.sub("", text)
+    # 2) 删自闭合危险标签
+    text = _SVG_TAG_SELF.sub("", text)
+    # 3) 删 on* 事件属性
+    text = _SVG_DANGER_ATTR.sub("", text)
+    # 4) 删 javascript:/data:text/html: 链接
+    text = _SVG_JS_URL.sub("", text)
+    # 5) 去掉 XML 处理指令里的外部实体（XXE 防护）
+    text = re.sub(r"<!DOCTYPE[^>]*>", "", text, flags=re.I)
+    text = re.sub(r"<!ENTITY[^>]*>", "", text, flags=re.I)
+    if "<svg" not in text.lower():
+        return None
+    return text.encode("utf-8")
+
+
+# ── 上传限流：同一 IP 每小时上限，防止塞满磁盘 ──
+UPLOAD_LOG: Dict[str, List[float]] = {}
+UPLOAD_PER_HOUR = 30
+UPLOAD_MAX_FILES = 2000          # 总量上限，超过后拒绝新上传
+
+
+def upload_allowed(ip: str) -> Tuple[bool, str]:
+    """检查是否还能上传"""
+    # 总量保护
+    try:
+        existing = len(list(UPLOAD_DIR.glob("*")))
+    except Exception:
+        existing = 0
+    if existing >= UPLOAD_MAX_FILES:
+        return False, f"媒体库已达上限（{UPLOAD_MAX_FILES} 张），请联系站长清理"
+    if not ip:
+        return True, ""
+    now = _now()
+    hist = [t for t in UPLOAD_LOG.get(ip, []) if now - t < 3600]
+    if len(hist) >= UPLOAD_PER_HOUR:
+        wait = int(3600 - (now - hist[0]))
+        return False, f"上传太频繁，请 {max(1, wait // 60)} 分钟后再试"
+    hist.append(now)
+    UPLOAD_LOG[ip] = hist
+    return True, ""
+
+
+# ── 审计日志（jsonl 追加，保留 14 天）──
+AUDIT_FILE = DATA_DIR / "audit.jsonl"
+AUDIT_KEEP_DAYS = 14
+AUDIT_LOCK = threading.Lock()
+
+
+def audit(action: str, target: str = "", detail: str = "") -> None:
+    """记一条操作日志：谁、在哪、做了什么"""
+    try:
+        user = CUR_USER["v"] or {}
+        row = {
+            "t": _now(),
+            "who": str(user.get("username") or user.get("uid") or "匿名")[:40],
+            "role": effective_role(user) if user else "guest",
+            "action": str(action)[:40],
+            "target": str(target)[:120],
+            "detail": str(detail)[:200],
+        }
+        with AUDIT_LOCK:
+            with AUDIT_FILE.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.warning(f"[wiki] 写审计日志失败: {e}")
+
+
+def load_audit(days: int = AUDIT_KEEP_DAYS) -> List[Dict[str, Any]]:
+    """读最近 N 天审计记录，顺便清理过期"""
+    if not AUDIT_FILE.exists():
+        return []
+    cutoff = _now() - days * 86400
+    keep: List[Dict[str, Any]] = []
+    rows: List[Dict[str, Any]] = []
+    try:
+        for line in AUDIT_FILE.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if float(r.get("t", 0)) >= cutoff:
+                keep.append(r)
+                rows.append(r)
+    except Exception as e:
+        logger.warning(f"[wiki] 读审计日志失败: {e}")
+        return []
+    # 有过期记录就重写一次，控制文件大小
+    if len(keep) < 1 or (AUDIT_FILE.stat().st_size > 512 * 1024):
+        try:
+            AUDIT_FILE.write_text(
+                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in keep),
+                encoding="utf-8")
+        except Exception:
+            pass
+    return list(reversed(rows))
+
+
+# ── 敏感文件权限 ──
+def tighten_perms() -> None:
+    """把含隐私数据的文件设为 600"""
+    for p in (USERS_FILE, SESSION_FILE, CONFIG_FILE, AUDIT_FILE):
+        try:
+            if p.exists():
+                os.chmod(p, 0o600)
+        except Exception:
+            pass
+
+
 
 def _esc(text: str) -> str:
     return html.escape(str(text or ""), quote=True)
@@ -481,6 +632,44 @@ h1{
   font-size:13.5px;color:var(--sub);
 }
 
+/* ── 评论（折叠）── */
+.cmts{
+  margin-top:36px;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--panel);box-shadow:var(--shadow);overflow:hidden;
+}
+.cmts>summary{
+  cursor:pointer;padding:14px 18px;font-size:14.5px;font-weight:600;
+  color:var(--ink);list-style:none;transition:background .15s;
+  display:flex;align-items:center;gap:8px;
+}
+.cmts>summary::-webkit-details-marker{display:none}
+.cmts>summary::after{
+  content:"展开";margin-left:auto;font-size:12px;color:var(--sub);font-weight:400;
+}
+.cmts[open]>summary::after{content:"收起"}
+.cmts>summary:hover{background:var(--soft)}
+.cmt-list{padding:0 18px;border-top:1px solid var(--line)}
+.cmt{padding:13px 0;border-bottom:1px dashed var(--line)}
+.cmt:last-child{border-bottom:none}
+.cmt-h{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.cmt-h b{font-size:13.5px;color:var(--ink)}
+.cmt-t{font-size:12px;color:var(--faint);margin-left:auto}
+.cmt-b{
+  font-size:14px;color:var(--ink2);line-height:1.7;
+  white-space:pre-wrap;word-break:break-word;
+}
+.cmt-form{padding:14px 18px;border-top:1px solid var(--line);background:var(--panel2)}
+.cmt-form textarea{
+  width:100%;min-height:76px;padding:10px 12px;border:1px solid var(--line);
+  border-radius:9px;background:var(--bg);color:var(--ink);font-size:14px;
+  font-family:inherit;resize:vertical;outline:none;line-height:1.6;
+}
+.cmt-form textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+
+/* 表格在窄屏可横向滚动 */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:6px}
+.table-wrap table{min-width:560px}
+
 @media (max-width:820px){
   .layout{flex-direction:column}
   .side{
@@ -581,6 +770,41 @@ def _js(text: str) -> str:
             .replace('"', "&quot;").replace("<", "\\x3c").replace(">", "\\x3e")
             .replace("\n", "\\n").replace("\r", ""))
 
+PAGE_JS = """
+<script>
+(function () {
+  // 提交时禁用按钮，防重复点击
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!form || form.dataset.busy === '1') return;
+    var btn = form.querySelector('button[type=submit], button:not([type])');
+    if (!btn || btn.dataset.noBusy) return;
+    form.dataset.busy = '1';
+    btn.disabled = true;
+    var old = btn.textContent;
+    btn.textContent = '处理中…';
+    setTimeout(function () {
+      btn.disabled = false;
+      btn.textContent = old;
+      form.dataset.busy = '';
+    }, 8000);
+  });
+
+  // 有未保存内容时离开页面给提醒
+  var dirty = false;
+  document.querySelectorAll('form textarea, form input[type=text]').forEach(function (el) {
+    el.addEventListener('input', function () { dirty = true; });
+  });
+  document.querySelectorAll('form').forEach(function (f) {
+    f.addEventListener('submit', function () { dirty = false; });
+  });
+  window.addEventListener('beforeunload', function (e) {
+    if (dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+})();
+</script>
+"""
+
 def _csrf_field() -> str:
     """渲染成隐藏表单域；没登录时也给一个，登录后再校验"""
     try:
@@ -613,6 +837,7 @@ def _layout(title: str, inner: str, active: str = "", crumb: str = "",
         if _role == "owner":
             signed += ' · <a href="/admin/cookies">审核</a>'
         signed += ' · <a href="/logout">退出</a>'
+        signed += ' · <a href="/account">账号安全</a>'
     else:
         signed = '<a href="/login">登录</a> · <a href="/register">注册</a>'
 
@@ -646,12 +871,14 @@ def _layout(title: str, inner: str, active: str = "", crumb: str = "",
     {notice}
     {inner}
     <div class="foot">
-      <span>{SITE_NAME} · 群友共建 · 数据存放于 wiki_data/pages.json</span>
+      <span>{SITE_NAME} · 群友共建 · <a href="/privacy">隐私说明</a></span>
       <span>{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
     </div>
   </main>
-</div></body></html>"""
-    return _html.replace("{CSRF_FIELD}", _csrf_field())
+</div>
+{PAGE_JS}
+</body></html>"""
+    return _html.replace("{CSRF_FIELD}", _csrf_field()).replace("{PAGE_JS}", PAGE_JS)
 
 
 def page_card(name: str, page: Dict[str, Any]) -> str:
@@ -688,6 +915,127 @@ def view_home() -> str:
     return _layout("首页", inner, "home")
 
 
+
+# ============================================================
+# 评论（折叠展示，默认收起）
+# ============================================================
+COMMENTS_FILE = DATA_DIR / "comments.json"
+COMMENT_MAX_LEN = 1000
+COMMENT_MAX_PER_PAGE = 200      # 单页最多保留多少条
+
+
+def load_comments() -> Dict[str, Any]:
+    if not COMMENTS_FILE.exists():
+        return {"items": {}}
+    try:
+        data = json.loads(COMMENTS_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {"items": {}}
+        data.setdefault("items", {})
+        return data
+    except Exception as e:
+        logger.warning(f"[wiki] 读取评论失败: {e}")
+        return {"items": {}}
+
+
+def save_comments(data: Dict[str, Any]) -> None:
+    try:
+        tmp = COMMENTS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(COMMENTS_FILE)
+    except Exception as e:
+        logger.error(f"[wiki] 保存评论失败: {e}")
+
+
+def page_comments(name: str) -> List[Dict[str, Any]]:
+    """取某个词条下的评论，新的在前"""
+    items = (load_comments().get("items") or {}).get(name) or []
+    return sorted(items, key=lambda c: -float(c.get("time", 0)))
+
+
+def add_comment(name: str, body: str, user: Dict[str, Any]) -> Tuple[bool, str]:
+    body = (body or "").strip()
+    if not body:
+        return False, "评论不能为空"
+    if len(body) > COMMENT_MAX_LEN:
+        return False, f"评论太长（上限 {COMMENT_MAX_LEN} 字）"
+    data = load_comments()
+    items = data["items"].setdefault(name, [])
+    items.append({
+        "id": secrets.token_hex(6),
+        "body": body,
+        "uid": user.get("uid", ""),
+        "who": str(user.get("username") or "匿名")[:40],
+        "role": effective_role(user),
+        "time": _now(),
+    })
+    # 单页评论数上限，砍掉最旧的
+    if len(items) > COMMENT_MAX_PER_PAGE:
+        data["items"][name] = items[-COMMENT_MAX_PER_PAGE:]
+    save_comments(data)
+    return True, ""
+
+
+def delete_comment(name: str, cid: str, user: Dict[str, Any]) -> bool:
+    """自己发的可以删；站长/编辑可以删任何人的"""
+    data = load_comments()
+    items = data["items"].get(name) or []
+    keep = []
+    removed = False
+    for c in items:
+        if c.get("id") == cid and (c.get("uid") == user.get("uid")
+                                   or can_edit(user)):
+            removed = True
+            continue
+        keep.append(c)
+    if removed:
+        data["items"][name] = keep
+        save_comments(data)
+    return removed
+
+
+def _comment_block(name: str) -> str:
+    """词条底部的折叠评论区"""
+    user = CUR_USER["v"]
+    items = page_comments(name)
+    count = len(items)
+    rows = ""
+    for c in items:
+        role = c.get("role") or "guest"
+        ts = datetime.fromtimestamp(float(c.get("time", 0))).strftime("%m-%d %H:%M")
+        can_del = user and (c.get("uid") == user.get("uid") or can_edit(user))
+        del_btn = ""
+        if can_del:
+            del_btn = (f'<form method="post" action="/comment/delete" style="display:inline">'
+                       f'{{CSRF_FIELD}}'
+                       f'<input type="hidden" name="page" value="{_esc(name)}">'
+                       f'<input type="hidden" name="cid" value="{_esc(c.get("id"))}">'
+                       f'<button class="mini no" style="padding:2px 8px;font-size:11.5px">'
+                       f'删除</button></form>')
+        rows += (f'<div class="cmt">'
+                 f'<div class="cmt-h"><b>{_esc(c.get("who"))}</b>'
+                 f'<span class="badge {role}">{ROLE_NAMES.get(role, role)}</span>'
+                 f'<span class="cmt-t">{ts}</span>{del_btn}</div>'
+                 f'<div class="cmt-b">{_esc(c.get("body"))}</div></div>')
+    if user:
+        form = (f'<form method="post" action="/comment" class="cmt-form">{{CSRF_FIELD}}'
+                f'<input type="hidden" name="page" value="{_esc(name)}">'
+                f'<textarea name="body" required maxlength="{COMMENT_MAX_LEN}" '
+                f'placeholder="说点什么…（{COMMENT_MAX_LEN} 字以内）"></textarea>'
+                f'<div style="margin-top:8px"><button class="btn primary" type="submit">'
+                f'发表评论</button></div></form>')
+    else:
+        form = (f'<div class="empty" style="padding:20px 0;font-size:13.5px">'
+                f'<a href="/login">登录</a> 后可以评论</div>')
+    return f"""
+    <details class="cmts">
+      <summary>💬 评论（{count}）</summary>
+      <div class="cmt-list">{rows or '<div class="empty" style="padding:20px 0;font-size:13.5px">还没有评论，来抢沙发</div>'}</div>
+      {form}
+    </details>"""
+
+
+
 def view_page(name: str) -> str:
     data = load_pages()
     page = (data.get("pages") or {}).get(name)
@@ -713,7 +1061,8 @@ def view_page(name: str) -> str:
              f'<div class="meta"><span>🕒 {updated}</span>'
              f'<span>✏️ {int(page.get("edits", 0))} 次编辑</span>{tags}</div>'
              f'<article class="article">{body_html or "<p style=color:var(--sub)>（还没有正文）</p>"}</article>'
-             f'<div class="actions" style="margin-top:30px">{edit_btn}</div>')
+             f'<div class="actions" style="margin-top:30px">{edit_btn}</div>'
+             f'{_comment_block(name)}')
     return _layout(name, inner, crumb=f'<a href="/">首页</a> / {_esc(name)}')
 
 
@@ -966,6 +1315,12 @@ def save_upload(filename: str, content: bytes, uid: str = "") -> Tuple[bool, str
     ext = sniff_image_ext(content[:2048])
     if not ext:
         return False, "只支持 png / jpg / gif / webp / svg 图片（已校验文件内容）"
+    # SVG 是 XML，可能内嵌脚本 —— 落盘前强制消毒
+    if ext == ".svg":
+        cleaned = sanitize_svg(content)
+        if not cleaned:
+            return False, "SVG 内容不合法（清洗后不是有效图形）"
+        content = cleaned
     digest = hashlib.sha1(content).hexdigest()[:16]
     target = UPLOAD_DIR / f"{digest}{ext}"
     if not target.exists():
@@ -1143,7 +1498,8 @@ def _metric(key: str, value: str, unit: str = "", sub: str = "",
 def _admin_tabs(active: str) -> str:
     items = [("/admin", "总览", "home"), ("/admin/load", "服务器负载", "load"),
              ("/admin/media", "媒体库", "media"), ("/admin/pages", "词条管理", "pages"),
-             ("/admin/cookies", "Cookie 分发", "cookies"), ("/admin/mail", "邮件", "mail")]
+             ("/admin/cookies", "Cookie 分发", "cookies"),
+             ("/admin/audit", "操作日志", "audit"), ("/admin/mail", "邮件", "mail")]
     return '<div class="tabs">' + "".join(
         f'<a class="{"on" if k == active else ""}" href="{href}">{label}</a>'
         for href, label, k in items) + "</div>"
@@ -1330,6 +1686,129 @@ def view_admin_pages() -> str:
     <tbody>{rows or '<tr><td colspan=6 style="color:var(--sub)">还没有词条</td></tr>'}</tbody></table>
     """
     return _layout("词条管理", inner)
+
+
+
+def view_admin_audit() -> str:
+    """操作日志：谁在什么时候做了什么"""
+    rows = load_audit(AUDIT_KEEP_DAYS)
+    trs = ""
+    for r in rows[:300]:
+        ts = datetime.fromtimestamp(float(r.get("t", 0))).strftime("%m-%d %H:%M:%S")
+        role = ROLE_NAMES.get(str(r.get("role")), str(r.get("role")))
+        trs += (f'<tr><td style="white-space:nowrap;color:var(--sub)">{_esc(ts)}</td>'
+                f'<td>{_esc(r.get("who"))}<span class="badge {r.get("role")}">{_esc(role)}</span></td>'
+                f'<td><b>{_esc(r.get("action"))}</b></td>'
+                f'<td>{_esc(r.get("target") or "-")}</td>'
+                f'<td style="color:var(--sub);font-size:12.5px">{_esc(r.get("detail") or "")}</td></tr>')
+    inner = f"""
+    <div class="admin-head"><h1>操作日志</h1>
+      <div class="t">最近 {AUDIT_KEEP_DAYS} 天 · {len(rows)} 条</div></div>
+    {_admin_tabs("audit")}
+    <div class="notice">记录登录、编辑、删除、审批等关键操作，保留 {AUDIT_KEEP_DAYS} 天后自动清理。</div>
+    <div class="table-wrap">
+    <table class="t"><thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>备注</th></tr></thead>
+    <tbody>{trs or '<tr><td colspan=5 style="color:var(--sub)">还没有记录</td></tr>'}</tbody></table>
+    </div>
+    """
+    return _layout("操作日志", inner)
+
+
+def view_account() -> str:
+    """账号安全页：改密码、看登录设备、踢掉可疑会话"""
+    user = CUR_USER["v"]
+    if not user:
+        return view_login(err="请先登录")
+    uid = user.get("uid", "")
+    devices = user_sessions(uid)
+    drows = ""
+    for d in devices:
+        ts = datetime.fromtimestamp(float(d["time"])).strftime("%m-%d %H:%M")
+        ua = (d.get("ua") or "未知设备")[:70]
+        me = ('<span class="badge editor">当前</span>' if d.get("current") else "")
+        act = "" if d.get("current") else (
+            f'<form method="post" action="/account/kick" style="display:inline">{{CSRF_FIELD}}'
+            f'<input type="hidden" name="token" value="{_esc(d["token"])}">'
+            f'<button class="mini no">下线</button></form>')
+        drows += (f'<tr><td>{_esc(ua)}{me}</td><td>{_esc(d.get("ip") or "-")}</td>'
+                  f'<td>{ts}</td><td>{act}</td></tr>')
+    inner = f"""
+    <div class="auth" style="max-width:640px">
+      <h1>账号安全</h1>
+      <div class="sub2">{_esc(user.get("username"))} · {ROLE_NAMES.get(effective_role(user), "")}</div>
+
+      <h2 style="font-size:16px;margin:26px 0 10px">修改密码</h2>
+      <form method="post" action="/account/password">{{CSRF_FIELD}}
+        <div class="field"><label>当前密码</label>
+          <input name="old" type="password" required autocomplete="current-password"></div>
+        <div class="field"><label>新密码（至少 8 位，不能纯数字）</label>
+          <input name="new" type="password" required minlength="8" autocomplete="new-password"></div>
+        <div class="field"><label>确认新密码</label>
+          <input name="new2" type="password" required minlength="8" autocomplete="new-password"></div>
+        <button type="submit">更新密码</button>
+      </form>
+
+      <h2 style="font-size:16px;margin:32px 0 10px">登录设备</h2>
+      <div class="table-wrap">
+      <table class="t"><thead><tr><th>设备</th><th>IP</th><th>登录时间</th><th></th></tr></thead>
+      <tbody>{drows or '<tr><td colspan=4 style="color:var(--sub)">没有记录</td></tr>'}</tbody></table>
+      </div>
+      <div class="foot2" style="text-align:left;margin-top:16px">
+        <form method="post" action="/account/kickall"
+          onsubmit="return confirm('确定下线其他所有设备？')">{{CSRF_FIELD}}
+          <button class="mini no" type="submit">下线其他所有设备</button>
+        </form>
+      </div>
+      <div class="foot2"><a href="/">返回首页</a></div>
+    </div>"""
+    return _layout("账号安全", inner)
+
+
+def view_privacy() -> str:
+    """隐私说明：收集什么、存哪里、谁能看"""
+    inner = f"""
+    <div style="max-width:680px">
+      <h1>隐私说明</h1>
+      <div class="meta"><span>最后更新：2026-10-18</span></div>
+      <article class="article">
+        <h2>我们收集什么</h2>
+        <ul>
+          <li><b>注册信息</b>：用户名、邮箱、密码哈希（不可逆）</li>
+          <li><b>登录记录</b>：登录时间、IP 地址、浏览器标识</li>
+          <li><b>操作日志</b>：谁在什么时候编辑、删除了什么，保留 {AUDIT_KEEP_DAYS} 天</li>
+          <li><b>上传内容</b>：你上传的图片，以及原始文件名</li>
+        </ul>
+
+        <h2>数据存在哪里</h2>
+        <p>全部存放在本站服务器的 <code>wiki_data/</code> 目录下的 JSON 文件中，
+        不上传到任何第三方服务。含隐私的文件权限为 600（仅服务器管理员可读）。</p>
+
+        <h2>谁能看到</h2>
+        <ul>
+          <li><b>公开可见</b>：词条正文、标签、编辑次数、上传的图片</li>
+          <li><b>仅站长可见</b>：你的邮箱、登录 IP、操作日志</li>
+          <li><b>任何人都看不到</b>：你的密码（只存哈希，无法还原）</li>
+        </ul>
+
+        <h2>我们不做什么</h2>
+        <ul>
+          <li>不投放广告，不接入第三方统计</li>
+          <li>不把数据卖给或分享给任何第三方</li>
+          <li>不用你的邮箱发营销邮件</li>
+        </ul>
+
+        <h2>你的权利</h2>
+        <ul>
+          <li><b>删除账号</b>：联系站长，会连同你的会话和登录记录一起清除</li>
+          <li><b>导出内容</b>：词条内容可随时复制走</li>
+          <li><b>修改密码</b>：登录后在 <a href="/account">账号安全</a> 页自行修改</li>
+        </ul>
+
+        <h2>Cookie 用途</h2>
+        <p>只用于保持登录状态（<code>wiki_token</code>），不做追踪，不跨站共享。</p>
+      </article>
+    </div>"""
+    return _layout("隐私说明", inner)
 
 
 # ============================================================
@@ -1955,21 +2434,73 @@ def check_captcha(token: str, answer: str) -> Tuple[bool, str]:
     return True, ""
 
 
+SESSION_MAX_PER_USER = 3      # 同一账号最多保留几个登录设备
+
+
 def new_session(user: Dict[str, Any], ip: str = "", ua: str = "") -> str:
+    """签发会话。
+
+    * 会话固定防护：每次登录都生成全新 token；
+    * 设备数限制：超过 SESSION_MAX_PER_USER 时踢掉最旧的；
+    * 过期会话顺带清理，避免文件无限增长。
+    """
     token = secrets.token_urlsafe(32)
+    uid = user["uid"]
     with _LOCK:
         data = load_sessions()
-        data["sessions"][token] = {"uid": user["uid"],
-                                   "username": user.get("username", ""),
-                                   "time": _now(),
-                                   "ip": (ip or "")[:64],
-                                   "ua": (ua or "")[:200]}
-        # 顺手清理过期会话，避免文件无限增长
+        sessions = data.get("sessions") or {}
+        # 清理过期
         cutoff = _now() - COOKIE_MAX_AGE
-        data["sessions"] = {k: v for k, v in data["sessions"].items()
-                            if float(v.get("time", 0)) > cutoff}
+        sessions = {k: v for k, v in sessions.items()
+                    if float(v.get("time", 0)) > cutoff}
+        # 同一账号设备数上限：保留最新的 N-1 个，再加当前这个
+        mine = sorted([(k, v) for k, v in sessions.items() if v.get("uid") == uid],
+                      key=lambda kv: -float(kv[1].get("time", 0)))
+        for k, _v in mine[SESSION_MAX_PER_USER - 1:]:
+            sessions.pop(k, None)
+        sessions[token] = {"uid": uid,
+                           "username": user.get("username", ""),
+                           "time": _now(),
+                           "ip": (ip or "")[:64],
+                           "ua": (ua or "")[:200]}
+        data["sessions"] = sessions
         save_sessions(data)
     return token
+
+
+def user_sessions(uid: str) -> List[Dict[str, Any]]:
+    """列出某账号当前登录的设备"""
+    out: List[Dict[str, Any]] = []
+    for tok, v in (load_sessions().get("sessions") or {}).items():
+        if v.get("uid") != uid:
+            continue
+        out.append({"token": tok,
+                    "time": float(v.get("time", 0)),
+                    "ip": v.get("ip", ""),
+                    "ua": v.get("ua", ""),
+                    "current": tok == (CUR_SESSION.get("v") or "")})
+    return sorted(out, key=lambda x: -x["time"])
+
+
+def kill_session(token: str) -> None:
+    with _LOCK:
+        data = load_sessions()
+        data.get("sessions", {}).pop(token, None)
+        save_sessions(data)
+
+
+def kill_user_sessions(uid: str, keep: str = "") -> int:
+    """踢掉某账号所有会话（可保留一个），返回踢掉的数量"""
+    with _LOCK:
+        data = load_sessions()
+        sessions = data.get("sessions") or {}
+        victims = [k for k, v in sessions.items()
+                   if v.get("uid") == uid and k != keep]
+        for k in victims:
+            sessions.pop(k, None)
+        data["sessions"] = sessions
+        save_sessions(data)
+        return len(victims)
 
 
 def session_user(token: str) -> Optional[Dict[str, Any]]:
@@ -2028,10 +2559,12 @@ def review_cookie(uid: str, approve: bool, reviewer: str = OWNER_ID) -> Tuple[bo
         rec["cookie_request"] = {**req, "status": "approved", "time": _now()}
         save_users(users)
         logger.info(f"[wiki] Cookie 已批准：{rec.get('username')}（审核人 {reviewer}）")
+        audit("批准 Cookie", rec.get("username", ""))
         return True, f"已批准，Cookie：{cookie}"
     rec["cookie_request"] = {**req, "status": "rejected", "time": _now()}
     save_users(users)
     logger.info(f"[wiki] Cookie 被拒绝：{rec.get('username')}")
+    audit("拒绝 Cookie", rec.get("username", ""))
     return True, "已拒绝该申请"
 
 
@@ -2118,11 +2651,27 @@ def _is_https(req: Request) -> bool:
     return req.url.scheme == "https"
 
 
+# 全局安全响应头。CSP 是防 XSS 的最后一道防线：
+# 站点没有外部脚本、没有内联事件，所以可以收得很紧。
+CSP_POLICY = "; ".join([
+    "default-src 'self'",
+    "img-src 'self' data: blob:",
+    "style-src 'self' 'unsafe-inline'",   # 样式是内联 <style>，需要 inline
+    "script-src 'self' 'unsafe-inline'",  # 少量内联脚本（上传预览等）
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+])
+
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "same-origin",
-    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
+    "Content-Security-Policy": CSP_POLICY,
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
 }
 
 
@@ -2130,6 +2679,7 @@ SECURITY_HEADERS = {
 async def _auth_middleware(request: Request, call_next):
     """每个请求解析一次身份：会话 Cookie → 用户；同时兼容旧口令"""
     token = request.cookies.get(COOKIE_NAME, "")
+    CUR_SESSION["v"] = token
     user = session_user(token)
     if user is None:
         # 兼容旧版编辑口令 cookie（站长快捷登录）
@@ -2140,11 +2690,16 @@ async def _auth_middleware(request: Request, call_next):
                              "role": ROLE_OWNER, "email": "", "legacy": True}
             resp = await call_next(request)
             resp.headers.update(SECURITY_HEADERS)
+            if _is_https(request):
+                resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
             return resp
     IS_EDITOR["v"] = False
     CUR_USER["v"] = user
     resp = await call_next(request)
     resp.headers.update(SECURITY_HEADERS)
+    # 只在 HTTPS 下加 HSTS，避免 HTTP 环境把自己锁死
+    if _is_https(request):
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return resp
 
 
@@ -2277,6 +2832,7 @@ async def route_new_post(title: str = Form(...), tags: str = Form(""),
     }
     save_pages(data)
     logger.info(f"[wiki] 新建词条：{title}")
+    audit("新建词条", title)
     return RedirectResponse("/p/" + quote(title), status_code=303)
 
 
@@ -2310,6 +2866,7 @@ async def route_edit_post(name: str, tags: str = Form(""),
     page["edits"] = int(page.get("edits", 0)) + 1
     save_pages(data)
     logger.info(f"[wiki] 编辑词条：{name}")
+    audit("编辑词条", name)
     return RedirectResponse("/p/" + quote(name), status_code=303)
 
 
@@ -2486,10 +3043,11 @@ async def route_register_post(req: Request, username: str = Form(""),
         return HTMLResponse(view_register(err=problem, ip=ip), status_code=400)
     if password != password2:
         return HTMLResponse(view_register(err="两次密码不一致", ip=ip), status_code=400)
-    if find_user(username):
-        return HTMLResponse(view_register(err="这个用户名已被注册", ip=ip), status_code=400)
-    if find_user(email):
-        return HTMLResponse(view_register(err="这个邮箱已注册过", ip=ip), status_code=400)
+    # 防用户枚举：不直接说"已被注册"，统一成模糊提示
+    if find_user(username) or find_user(email):
+        return HTMLResponse(
+            view_register(err="用户名或邮箱不可用，换一个试试（如果这是你的账号，请直接登录）",
+                          ip=ip), status_code=400)
 
     # 3) 建账号（先不激活，等邮箱验证）
     pw_hash, salt = hash_password(password)
@@ -2586,6 +3144,7 @@ async def route_login_post(req: Request, account: str = Form(""),
     user = find_user(account)
     if not user or not verify_password(password, user):
         login_fail(ip)
+        audit("登录失败", (account or "")[:40], f"IP {ip}")
         return HTMLResponse(view_login(err="用户名或密码不对"), status_code=400)
     login_ok(ip)
     if user.get("status") == "banned":
@@ -2599,6 +3158,7 @@ async def route_login_post(req: Request, account: str = Form(""),
     resp.set_cookie(COOKIE_NAME, token, max_age=COOKIE_MAX_AGE,
                     httponly=True, samesite="lax", secure=_is_https(req))
     logger.info(f"[wiki] 登录：{user.get('username')}")
+    audit("登录成功", user.get("username", ""), f"IP {ip}")
     return resp
 
 
@@ -2683,6 +3243,7 @@ async def route_admin_page_delete(name: str = Form(""), csrf: str = Form("")):
         logger.warning(f"[wiki] 回收站写入失败: {e}")
     save_pages(data)
     logger.info(f"[wiki] 删除词条：{name}")
+    audit("删除词条", name)
     return RedirectResponse("/admin/pages?msg=" + quote(f"已删除词条「{name}」"),
                             status_code=303)
 
@@ -2737,6 +3298,7 @@ async def route_admin_page_restore(name: str = Form(""), csrf: str = Form("")):
     bin_data["items"] = items
     _save_json(bin_file, bin_data)
     logger.info(f"[wiki] 恢复词条：{name}")
+    audit("恢复词条", name)
     return RedirectResponse("/admin/pages/deleted?msg=" + quote(f"已恢复「{name}」"),
                             status_code=303)
 
@@ -2762,6 +3324,7 @@ async def route_admin_media_delete(name: str = Form(""), csrf: str = Form("")):
     data["items"].pop(safe, None)
     save_media(data)
     logger.info(f"[wiki] 删除图片：{safe}")
+    audit("删除图片", safe)
     msg = f"已删除图片 {safe}" if removed else f"图片 {safe} 不存在（已清理索引）"
     return RedirectResponse("/admin/media?msg=" + quote(msg), status_code=303)
 
@@ -2791,6 +3354,7 @@ async def route_admin_pages_clear(csrf: str = Form("")):
     data["pages"] = {}
     save_pages(data)
     logger.warning(f"[wiki] 站长清空了所有词条（{count} 个，已进回收站）")
+    audit("清空词条", f"{count} 个")
     return RedirectResponse("/admin/pages?msg=" + quote(f"已清空 {count} 个词条（可在回收站恢复）"),
                             status_code=303)
 
@@ -2814,6 +3378,7 @@ async def route_admin_media_clear(csrf: str = Form("")):
         logger.warning(f"[wiki] 清空媒体库失败: {e}")
     save_media({"items": {}})
     logger.warning(f"[wiki] 站长清空媒体库（{n} 张）")
+    audit("清空媒体库", f"{n} 张")
     return RedirectResponse("/admin/media?msg=" + quote(f"已清空媒体库（{n} 张）"),
                             status_code=303)
 
@@ -2849,6 +3414,7 @@ async def route_admin_cookie_action(uid: str = Form(""), action: str = Form(""),
         rec["cookie"] = {"token": cookie, "issued": _now(), "by": OWNER_ID}
         save_users(users)
         logger.info(f"[wiki] 站长直接发放 Cookie：{rec.get('username')}")
+        audit("发放 Cookie", rec.get("username", ""))
         return RedirectResponse("/admin/cookies?msg=" + quote(f"已发放：{cookie}"),
                                 status_code=303)
     if action == "revoke":
@@ -2860,6 +3426,7 @@ async def route_admin_cookie_action(uid: str = Form(""), action: str = Form(""),
         rec["role"] = ROLE_GUEST
         save_users(users)
         logger.info(f"[wiki] 收回 Cookie：{rec.get('username')}")
+        audit("收回 Cookie", rec.get("username", ""))
         return RedirectResponse("/admin/cookies?msg=" + quote("已收回该用户的 Cookie"),
                                 status_code=303)
     if action == "delete":
@@ -2874,6 +3441,7 @@ async def route_admin_cookie_action(uid: str = Form(""), action: str = Form(""),
         users["users"].pop(uid, None)
         save_users(users)
         logger.info(f"[wiki] 删除账号：{rec.get('username')}（{rec.get('email')}）")
+        audit("删除账号", rec.get("username", ""))
         return RedirectResponse(
             "/admin/cookies?msg=" + quote(f"已删除账号 {rec.get('username')}"),
             status_code=303)
@@ -2891,6 +3459,147 @@ async def route_admin_cookie_action(uid: str = Form(""), action: str = Form(""),
         return RedirectResponse("/admin/cookies?msg=" + quote(f"已设为{ROLE_NAMES[role]}"),
                                 status_code=303)
     return RedirectResponse("/admin/cookies?err=" + quote("未知操作"), status_code=303)
+
+
+@app.get("/admin/audit", response_class=HTMLResponse)
+async def route_admin_audit() -> HTMLResponse:
+    blocked = _admin_blocked()
+    return blocked or HTMLResponse(view_admin_audit())
+
+
+@app.get("/account", response_class=HTMLResponse)
+async def route_account() -> HTMLResponse:
+    return HTMLResponse(view_account())
+
+
+@app.post("/account/password", response_class=HTMLResponse)
+async def route_account_password(old: str = Form(""), new: str = Form(""),
+                                 new2: str = Form(""), csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    user = CUR_USER["v"]
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if not verify_password(old, user):
+        audit("改密码失败", user.get("username", ""), "当前密码错误")
+        return HTMLResponse(view_account().replace(
+            "<h1>账号安全</h1>",
+            '<h1>账号安全</h1><div class="notice warn">当前密码不对</div>'), status_code=400)
+    problem = password_problem(new)
+    if problem:
+        return HTMLResponse(view_account().replace(
+            "<h1>账号安全</h1>",
+            f'<h1>账号安全</h1><div class="notice warn">{_esc(problem)}</div>'),
+            status_code=400)
+    if new != new2:
+        return HTMLResponse(view_account().replace(
+            "<h1>账号安全</h1>",
+            '<h1>账号安全</h1><div class="notice warn">两次输入的新密码不一致</div>'),
+            status_code=400)
+    users = load_users()
+    rec = users["users"].get(user.get("uid", ""))
+    if not rec:
+        return RedirectResponse("/login", status_code=303)
+    pw, salt = hash_password(new)
+    rec["password"] = pw
+    rec["salt"] = salt
+    rec["password_changed"] = _now()
+    save_users(users)
+    # 改密码后踢掉其他所有设备，只保留当前会话
+    killed = kill_user_sessions(rec["uid"], keep=CUR_SESSION.get("v") or "")
+    audit("修改密码", rec.get("username", ""), f"下线 {killed} 个其他设备")
+    logger.info(f"[wiki] 修改密码：{rec.get('username')}")
+    return HTMLResponse(view_account().replace(
+        "<h1>账号安全</h1>",
+        '<h1>账号安全</h1><div class="notice">密码已更新，其他设备已下线</div>'))
+
+
+@app.post("/account/kick", response_class=HTMLResponse)
+async def route_account_kick(token: str = Form(""), csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    user = CUR_USER["v"]
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    # 只能踢自己的会话
+    for v in (load_sessions().get("sessions") or {}).values():
+        pass
+    sessions = load_sessions().get("sessions") or {}
+    target = sessions.get(token) or {}
+    if target.get("uid") == user.get("uid") and token != CUR_SESSION.get("v"):
+        kill_session(token)
+        audit("下线设备", user.get("username", ""))
+    return RedirectResponse("/account", status_code=303)
+
+
+@app.post("/account/kickall", response_class=HTMLResponse)
+async def route_account_kickall(csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    user = CUR_USER["v"]
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    killed = kill_user_sessions(user.get("uid", ""), keep=CUR_SESSION.get("v") or "")
+    audit("下线其他设备", user.get("username", ""), f"{killed} 个")
+    return RedirectResponse("/account", status_code=303)
+
+
+@app.post("/comment", response_class=HTMLResponse)
+async def route_comment(page: str = Form(""), body: str = Form(""),
+                        csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    user = CUR_USER["v"]
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if not (load_pages().get("pages") or {}).get(page):
+        return RedirectResponse("/", status_code=303)
+    ok, msg = add_comment(page, body, user)
+    if ok:
+        audit("发表评论", page, body[:60])
+    return RedirectResponse("/p/" + quote(page) + "#comments", status_code=303)
+
+
+@app.post("/comment/delete", response_class=HTMLResponse)
+async def route_comment_delete(page: str = Form(""), cid: str = Form(""),
+                               csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    user = CUR_USER["v"]
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if delete_comment(page, cid, user):
+        audit("删除评论", page)
+    return RedirectResponse("/p/" + quote(page) + "#comments", status_code=303)
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def route_privacy() -> HTMLResponse:
+    return HTMLResponse(view_privacy())
+
+
+@app.get("/robots.txt")
+async def route_robots() -> PlainTextResponse:
+    """默认不索引后台与个人页面，但公开词条允许收录"""
+    lines = [
+        "User-agent: *",
+        "Disallow: /admin",
+        "Disallow: /login",
+        "Disallow: /register",
+        "Disallow: /verify",
+        "Disallow: /account",
+        "Disallow: /apply",
+        "Disallow: /api/",
+        "Disallow: /media/",
+        "Allow: /",
+        "",
+    ]
+    return PlainTextResponse("\n".join(lines), media_type="text/plain")
 
 
 @app.get("/admin/mail/test")
@@ -3027,9 +3736,14 @@ async def route_admin_upload(request: Request, file: UploadFile = File(...)):
         return PlainTextResponse(
             f"❌ 图片太大（{len(raw) / 1024 / 1024:.1f}MB，上限 {MAX_UPLOAD_MB}MB）",
             status_code=413)
+    ip = (request.client.host if request.client else "") or ""
+    allow, why = upload_allowed(ip)
+    if not allow:
+        return PlainTextResponse(f"❌ {why}", status_code=429)
     ok, msg = save_upload(file.filename or "", raw)
     if not ok:
         return PlainTextResponse(f"❌ {msg}", status_code=400)
+    audit("上传图片", msg, f"{len(raw)} 字节")
     return PlainTextResponse(f"✅ 上传成功：{msg}")
 
 
@@ -3042,9 +3756,14 @@ async def route_api_upload(request: Request, file: UploadFile = File(...)):
     if len(raw) > MAX_UPLOAD_BYTES:
         return JSONResponse({"ok": False,
                              "error": f"图片太大（上限 {MAX_UPLOAD_MB}MB）"}, status_code=413)
+    ip = (request.client.host if request.client else "") or ""
+    allow, why = upload_allowed(ip)
+    if not allow:
+        return JSONResponse({"ok": False, "error": why}, status_code=429)
     ok, msg = save_upload(file.filename or "", raw)
     if not ok:
         return JSONResponse({"ok": False, "error": msg}, status_code=400)
+    audit("上传图片", msg, f"{len(raw)} 字节")
     return JSONResponse({"ok": True, "url": msg})
 
 
@@ -3073,8 +3792,14 @@ async def route_media(name: str):
     media_type = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                   ".gif": "image/gif", ".webp": "image/webp",
                   ".svg": "image/svg+xml"}.get(suffix, "application/octet-stream")
-    return FileResponse(str(target), media_type=media_type,
-                        headers={"Cache-Control": "public, max-age=86400"})
+    headers = {
+        "Cache-Control": "public, max-age=86400",
+        # 即使消毒漏了，这个 CSP 也让 SVG 里的脚本无法执行
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    }
+    if suffix == ".svg":
+        headers["Content-Disposition"] = "inline; filename=" + target.name
+    return FileResponse(str(target), media_type=media_type, headers=headers)
 
 
 # ============================================================
