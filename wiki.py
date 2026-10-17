@@ -409,6 +409,13 @@ table.t tr:hover td{background:var(--soft)}
 """
 
 
+
+def _js(text: str) -> str:
+    """转义成可安全放进 onclick/onsubmit 字符串字面量的文本"""
+    return (str(text or "").replace("\\", "\\\\").replace("'", "\\'")
+            .replace('"', "&quot;").replace("<", "\\x3c").replace(">", "\\x3e")
+            .replace("\n", "\\n").replace("\r", ""))
+
 def _layout(title: str, inner: str, active: str = "", crumb: str = "",
             notice: str = "") -> str:
     data = load_pages()
@@ -523,7 +530,7 @@ def view_page(name: str) -> str:
     # 有编辑权限的人可以在详情页直接删除（带二次确认）
     if can_edit(CUR_USER["v"]):
         edit_btn += (f'<form method="post" action="/admin/pages/delete" style="display:inline" '
-                     f'onsubmit="return confirm(\'确定删除「{name}」？删除后可在回收站恢复\')">'
+                     f'onsubmit="return confirm(\'确定删除「{_js(name)}」？删除后可在回收站恢复\')">'
                      f'<input type="hidden" name="name" value="{_esc(name)}">'
                      f'<button class="btn" style="color:#b4573c;border-color:#e0b9ad">'
                      f'删除</button></form>')
@@ -1128,7 +1135,7 @@ def view_admin_pages() -> str:
         f'<td class="row-actions"><a class="mini" href="/edit/{quote(n)}">编辑</a>'
         f'<a class="mini" href="/history/{quote(n)}">历史</a>'
         f'<form method="post" action="/admin/pages/delete" '
-        f'onsubmit="return confirm(\'确定删除词条「{n}」？\\n删除后不可恢复（建议先导出备份）\')">'
+        f'onsubmit="return confirm(\'确定删除词条「{_js(n)}」？\\n删除后不可恢复（建议先导出备份）\')">'
         f'<input type="hidden" name="name" value="{_esc(n)}">'
         f'<button class="mini no">删除</button></form></td></tr>'
         for n, p in pages)
@@ -1337,7 +1344,7 @@ def view_admin_cookies(msg: str = "", err: str = "") -> str:
                          f'<input type="hidden" name="action" value="set_guest">'
                          f'<button class="mini">降为访客</button></form>')
             acts += (f'<form method="post" action="/admin/cookie" '
-                     f'onsubmit="return confirm(\'删除账号 {_esc(u.get("username"))}？'
+                     f'onsubmit="return confirm(\'删除账号 {_js(u.get("username"))}？'
                      f'该账号会话会立即失效，不可恢复\')">'
                      f'<input type="hidden" name="uid" value="{uid_v}">'
                      f'<input type="hidden" name="action" value="delete">'
@@ -1432,6 +1439,41 @@ def _save_json(path: Path, data: Dict[str, Any]) -> None:
         tmp.replace(path)
     except Exception as e:
         logger.error(f"[wiki] 保存 {path.name} 失败: {e}")
+
+
+
+# 登录失败限流：同一 IP 10 分钟内失败 8 次就锁 15 分钟
+_LOGIN_FAIL: Dict[str, Dict[str, float]] = {}
+LOGIN_MAX_FAIL = 8
+LOGIN_FAIL_WINDOW = 600
+LOGIN_LOCK_SEC = 900
+
+
+def login_blocked(ip: str) -> int:
+    """返回剩余锁定秒数，0 表示可继续尝试"""
+    rec = _LOGIN_FAIL.get(ip or "")
+    if not rec:
+        return 0
+    now = _now()
+    if rec.get("lock_until", 0) > now:
+        return int(rec["lock_until"] - now)
+    if now - rec.get("first", 0) > LOGIN_FAIL_WINDOW:
+        _LOGIN_FAIL.pop(ip or "", None)
+    return 0
+
+
+def login_fail(ip: str) -> None:
+    now = _now()
+    rec = _LOGIN_FAIL.setdefault(ip or "", {"count": 0, "first": now, "lock_until": 0})
+    if now - rec["first"] > LOGIN_FAIL_WINDOW:
+        rec.update({"count": 0, "first": now})
+    rec["count"] = int(rec.get("count", 0)) + 1
+    if rec["count"] >= LOGIN_MAX_FAIL:
+        rec["lock_until"] = now + LOGIN_LOCK_SEC
+
+
+def login_ok(ip: str) -> None:
+    _LOGIN_FAIL.pop(ip or "", None)
 
 
 def load_users() -> Dict[str, Any]:
@@ -1724,9 +1766,17 @@ def can_edit(user: Optional[Dict[str, Any]]) -> bool:
     return effective_role(user) in (ROLE_OWNER, ROLE_EDITOR)
 
 
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Referrer-Policy": "same-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+}
+
+
 @app.middleware("http")
 async def _auth_middleware(request: Request, call_next):
-    """每个请求都解析一次身份：会话 Cookie → 用户；同时兼容旧口令"""
+    """每个请求解析一次身份：会话 Cookie → 用户；同时兼容旧口令"""
     token = request.cookies.get(COOKIE_NAME, "")
     user = session_user(token)
     if user is None:
@@ -1736,10 +1786,14 @@ async def _auth_middleware(request: Request, call_next):
             IS_EDITOR["v"] = True
             CUR_USER["v"] = {"uid": OWNER_ID, "username": OWNER_ID,
                              "role": ROLE_OWNER, "email": "", "legacy": True}
-            return await call_next(request)
+            resp = await call_next(request)
+            resp.headers.update(SECURITY_HEADERS)
+            return resp
     IS_EDITOR["v"] = False
     CUR_USER["v"] = user
-    return await call_next(request)
+    resp = await call_next(request)
+    resp.headers.update(SECURITY_HEADERS)
+    return resp
 
 
 def _require_editor() -> Optional[HTMLResponse]:
@@ -2040,10 +2094,19 @@ async def route_login_page(msg: str = "", err: str = "") -> HTMLResponse:
 
 
 @app.post("/login", response_class=HTMLResponse)
-async def route_login_post(account: str = Form(""), password: str = Form("")):
+async def route_login_post(req: Request, account: str = Form(""),
+                            password: str = Form("")):
+    ip = (req.client.host if req.client else "") or ""
+    wait = login_blocked(ip)
+    if wait:
+        return HTMLResponse(
+            view_login(err=f"尝试次数过多，请 {wait // 60 + 1} 分钟后再试"),
+            status_code=429)
     user = find_user(account)
     if not user or not verify_password(password, user):
+        login_fail(ip)
         return HTMLResponse(view_login(err="用户名或密码不对"), status_code=400)
+    login_ok(ip)
     if user.get("status") == "banned":
         return HTMLResponse(view_login(err="账号已被封禁"), status_code=403)
     if not user.get("email_verified"):
