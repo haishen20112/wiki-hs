@@ -1,0 +1,22 @@
+# 运行时数据（不要提交用户数据！）
+wiki_data/users.json
+wiki_data/media.json
+wiki_data/deleted_pages.json
+wiki_data/sessions.json
+wiki_data/mail_outbox/
+wiki_data/uploads/*
+!wiki_data/uploads/.gitkeep
+
+# 日志与临时文件
+wiki.log
+*.log
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.DS_Store
+
+# 本地配置（含口令/SMTP 授权码）
+wiki_data/config.json
+!wiki_data/config.example.json

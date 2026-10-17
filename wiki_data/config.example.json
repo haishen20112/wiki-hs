@@ -1,0 +1,13 @@
+{
+  "token": "__AUTO_GENERATED__",
+  "port": 8081,
+  "owner": "",
+  "smtp": {
+    "host": "",
+    "port": "465",
+    "ssl": "1",
+    "user": "",
+    "password": "",
+    "from": ""
+  }
+}
