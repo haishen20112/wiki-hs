@@ -334,7 +334,7 @@ def ui_badge() -> str:
 # ── 敏感文件权限 ──
 def tighten_perms() -> None:
     """把含隐私数据的文件设为 600"""
-    for p in (USERS_FILE, SESSION_FILE, CONFIG_FILE, AUDIT_FILE):
+    for p in (USERS_FILE, SESSION_FILE, CONFIG_FILE, AUDIT_FILE, QA_FILE):
         try:
             if p.exists():
                 os.chmod(p, 0o600)
@@ -2801,6 +2801,16 @@ _CAPTCHA: Dict[str, Dict[str, Any]] = {}
 _MAIL: Dict[str, Any] = {"last": None, "error": ""}
 
 
+
+def _chmod600(path: Path) -> None:
+    """含隐私的文件只给所有者读写"""
+    try:
+        if path.exists():
+            os.chmod(path, 0o600)
+    except Exception:
+        pass
+
+
 def _load_json(path: Path, default: Dict[str, Any]) -> Dict[str, Any]:
     if not path.exists():
         return default
@@ -2864,6 +2874,7 @@ def load_users() -> Dict[str, Any]:
 
 def save_users(data: Dict[str, Any]) -> None:
     _save_json(USERS_FILE, data)
+    _chmod600(USERS_FILE)
 
 
 def load_sessions() -> Dict[str, Any]:
@@ -2874,6 +2885,7 @@ def load_sessions() -> Dict[str, Any]:
 
 def save_sessions(data: Dict[str, Any]) -> None:
     _save_json(SESSION_FILE, data)
+    _chmod600(SESSION_FILE)
 
 
 def find_user(key: str) -> Optional[Dict[str, Any]]:
@@ -4979,6 +4991,7 @@ async def _wiki_startup() -> None:
     CONFIG = load_config()
     EDIT_TOKEN = str(CONFIG.get("token") or "")
     seed_if_empty()
+    tighten_perms()
     pages = len((load_pages().get("pages") or {}))
 
     async def _serve() -> None:
@@ -5010,6 +5023,7 @@ def run_local(port: int = 8080, open_browser: bool = True) -> None:
     CONFIG = load_config()
     EDIT_TOKEN = str(CONFIG.get("token") or "")
     seed_if_empty()
+    tighten_perms()
 
     url = f"http://{LOCAL_HOST}:{port}/local"
     print("=" * 60)
