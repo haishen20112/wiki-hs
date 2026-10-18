@@ -638,18 +638,31 @@ h1{
 }
 .tag:hover{background:var(--accent2);color:#fff}
 
-/* ── 正文排版 ── */
-.article{font-size:16px;color:var(--ink2)}
+/* ── 正文排版：长文行高 1.82，段落节奏更松 ── */
+.article{font-size:16.5px;line-height:1.82;color:var(--ink2)}
 .article h2{
-  font-size:22px;margin:34px 0 14px;padding-left:13px;
+  font-size:22px;margin:38px 0 15px;padding-left:13px;
   border-left:4px solid var(--accent);color:var(--ink);font-weight:700;
-  line-height:1.4;
+  line-height:1.45;letter-spacing:.2px;
 }
-.article h3{font-size:18px;margin:26px 0 11px;color:var(--ink);font-weight:700}
-.article p{margin:0 0 14px}
-.article ul,.article ol{margin:0 0 15px;padding-left:26px}
-.article li{margin:4px 0}
+.article h2:first-child{margin-top:4px}
+.article h3{
+  font-size:18px;margin:28px 0 11px;color:var(--ink);font-weight:700;
+  line-height:1.5;
+}
+.article h4{font-size:16.5px;margin:22px 0 9px;color:var(--ink);font-weight:700}
+.article p{margin:0 0 17px}
+.article p:last-child{margin-bottom:0}
+.article ul,.article ol{margin:0 0 18px;padding-left:26px}
+.article li{margin:7px 0;line-height:1.78}
 .article li::marker{color:var(--accent)}
+.article a{border-bottom:1px solid color-mix(in srgb,var(--accent2) 35%,transparent);
+  transition:color .15s,border-color .15s}
+.article a:hover{color:var(--accent);
+  border-bottom-color:var(--accent);text-decoration:none}
+.article strong{color:var(--ink);font-weight:700}
+.article blockquote p{margin-bottom:8px}
+.article blockquote p:last-child{margin-bottom:0}
 .article blockquote{
   margin:16px 0;padding:12px 18px;border-left:3px solid var(--accent);
   color:var(--sub);background:var(--accent-soft);border-radius:0 10px 10px 0;
@@ -711,6 +724,7 @@ h1{
   background:var(--panel);color:var(--ink);font-size:15px;font-family:inherit;
   outline:none;transition:border-color .15s,box-shadow .15s;
 }
+.form input[type=text]:hover,.form textarea:hover{border-color:var(--line2)}
 .form textarea{
   min-height:380px;line-height:1.8;resize:vertical;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;
@@ -810,6 +824,7 @@ h1{
   background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
   padding:14px 18px;margin:0 0 26px;box-shadow:var(--shadow);
 }
+.meta-none{font-size:12px;color:var(--faint)}
 .toc-h{
   font-size:12px;color:var(--faint);letter-spacing:1.2px;text-transform:uppercase;
   font-weight:600;margin-bottom:9px;
@@ -883,33 +898,335 @@ h1{
 
 
 /* ── 搜索结果 ── */
-.hits{display:flex;flex-direction:column;gap:2px}
-.hit{padding:14px 16px;border-bottom:1px solid var(--line);
-  border-radius:8px;transition:background .12s}
-.hit:hover{background:var(--panel2)}
+.hits{display:flex;flex-direction:column;gap:4px}
+.hit{
+  display:flex;align-items:center;gap:14px;padding:14px 16px;
+  border:1px solid transparent;border-radius:10px;transition:background .14s,
+  border-color .14s,transform .14s;
+}
+.hit:hover{background:var(--panel2);border-color:var(--line)}
+.hit:active{background:var(--accent-soft)}
+.hit-main{flex:1;min-width:0}
 .hit-t{font-size:16.5px;font-weight:650;color:var(--ink);display:block}
 .hit-t:hover{color:var(--accent);text-decoration:none}
 .hit-b{margin-top:5px;font-size:13.5px;color:var(--sub);line-height:1.75}
+.hit-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.hit-tag{
+  font-size:11.5px;padding:2px 9px;border-radius:20px;
+  background:var(--accent2-soft);color:var(--accent2);
+}
+.hit-time{font-size:11.5px;color:var(--faint);margin-left:2px}
+.hit-go{
+  flex-shrink:0;width:34px;height:34px;border-radius:50%;display:grid;
+  place-items:center;background:var(--soft);color:var(--sub);font-size:15px;
+  transition:background .14s,color .14s,transform .14s;
+}
+.hit:hover .hit-go{background:var(--accent);color:#fff;transform:translateX(2px)}
 mark{background:var(--accent-soft);color:var(--accent-ink);
   padding:1px 3px;border-radius:3px;font-weight:600}
+@media (max-width:820px){
+  .hit{padding:14px 12px;gap:10px;border-color:var(--line);
+    background:var(--panel);box-shadow:var(--shadow)}
+  .hit-b{font-size:13px}
+  .hit-go{width:44px;height:44px;font-size:16px}
+}
 
 /* ── 表格在窄屏可横向滚动 ── */
-.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:6px}
+.table-wrap{
+  overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:10px;
+  max-width:100%;
+}
 .table-wrap table{min-width:560px}
+.table-wrap.is-scrollable{
+  background:
+    linear-gradient(to right,transparent 70%,color-mix(in srgb,var(--ink) 7%,transparent))
+    right center / 26px 100% no-repeat;
+  padding-right:2px;
+}
+
+/* ============================================================
+   移动端顶栏 + 抽屉侧栏
+   桌面端：顶栏隐藏、侧栏常驻
+   移动端：顶栏固定一行，侧栏变成左侧抽屉，正文首屏可见
+   ============================================================ */
+.topbar{display:none}
+.scrim{
+  display:none;position:fixed;inset:0;z-index:55;background:rgba(14,20,26,.48);
+  opacity:0;transition:opacity .22s ease;border:0;padding:0;
+  -webkit-tap-highlight-color:transparent;
+}
+.scrim.on{display:block;opacity:1}
+.side-close{display:none}
+
+/* 触屏/窄屏下所有可点元素的舒适点击区域 */
+@media (hover:none){
+  .nav a,.side ul li a,.toc-item,.bl-item,.tag,.mini,.btn,.etab,
+  .tabs a,.hit-t,.qa>summary,.qa-item>summary,.hist-item>summary{
+    min-height:44px;
+  }
+  .nav a,.side ul li a{display:flex;align-items:center}
+  .tag{display:inline-flex;align-items:center;padding:6px 14px}
+  .bl-item{display:inline-flex;align-items:center;padding:9px 14px}
+  .mini{padding:10px 14px}
+  .etab{padding:10px 16px}
+}
 
 @media (max-width:820px){
   .layout{flex-direction:column}
-  .side{
-    width:auto;flex:none;height:auto;position:static;border-right:none;
-    border-bottom:1px solid var(--line);padding:18px 16px;
+
+  /* 顶栏：logo + 汉堡，高度 56px，sticky */
+  .topbar{
+    display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:50;
+    height:56px;padding:0 12px 0 14px;
+    background:color-mix(in srgb,var(--panel) 88%,transparent);
+    -webkit-backdrop-filter:saturate(140%) blur(12px);
+    backdrop-filter:saturate(140%) blur(12px);
+    border-bottom:1px solid var(--line);
   }
-  .main{padding:24px 18px 56px}
-  .side ul{display:flex;flex-wrap:wrap;gap:4px}
-  h1{font-size:26px}
-  .article{font-size:15.5px}
+  .tb-logo{
+    display:flex;align-items:center;gap:8px;font-size:16.5px;font-weight:800;
+    letter-spacing:1px;color:var(--ink);min-height:44px;
+  }
+  .tb-logo img{width:26px;height:26px;border-radius:7px}
+  .tb-logo span{
+    background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .tb-spacer{flex:1}
+  .tb-btn{
+    width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--line);
+    background:var(--panel);border-radius:11px;cursor:pointer;padding:0;
+    -webkit-tap-highlight-color:transparent;
+    transition:background .15s,border-color .15s,transform .1s;
+  }
+  .tb-btn:active{transform:scale(.94);background:var(--soft)}
+  .tb-btn .burger,
+  .tb-btn .burger::before,
+  .tb-btn .burger::after{
+    display:block;width:18px;height:2px;border-radius:2px;background:var(--ink);
+    transition:transform .2s ease,opacity .2s ease;
+  }
+  .tb-btn .burger{position:relative}
+  .tb-btn .burger::before,.tb-btn .burger::after{
+    content:"";position:absolute;left:0;
+  }
+  .tb-btn .burger::before{top:-6px}
+  .tb-btn .burger::after{top:6px}
+  body.menu-open .tb-btn .burger{background:transparent}
+  body.menu-open .tb-btn .burger::before{transform:translateY(6px) rotate(45deg)}
+  body.menu-open .tb-btn .burger::after{transform:translateY(-6px) rotate(-45deg)}
+
+  /* 侧栏变成抽屉 */
+  .side{
+    position:fixed;top:0;left:0;bottom:0;z-index:60;
+    width:min(86vw,330px);height:100dvh;max-height:100dvh;
+    padding:16px 16px calc(24px + env(safe-area-inset-bottom));
+    border-right:1px solid var(--line);border-bottom:none;
+    overflow-y:auto;overscroll-behavior:contain;
+    transform:translateX(-103%);visibility:hidden;
+    transition:transform .26s cubic-bezier(.32,.72,.28,1),visibility .26s;
+    box-shadow:none;
+  }
+  .side.open{
+    transform:none;visibility:visible;
+    box-shadow:0 0 0 1px rgba(0,0,0,.04),24px 0 60px rgba(14,20,26,.28);
+  }
+  .side-close{
+    display:grid;place-items:center;position:absolute;top:12px;right:12px;
+    width:40px;height:40px;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel);color:var(--sub);font-size:16px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .side-close:active{background:var(--soft)}
+  .side .logo{padding-right:48px}
+  .side .search{margin:14px 0 10px}
+  .side .search input{min-height:44px;font-size:15px}
+  .side .search button{min-height:44px;min-width:56px;font-size:14px}
+  .nav{margin-top:10px;gap:2px}
+  .nav a{font-size:15px;padding:11px 13px}
+  .side h3{margin:20px 0 6px}
+  .side ul{display:flex;flex-wrap:wrap;gap:6px}
+  .side ul li a{padding:9px 12px;font-size:13.5px;background:var(--panel);
+    border:1px solid var(--line);border-radius:9px}
+  .side .side-auth{margin-top:20px;padding-top:14px;border-top:1px solid var(--line);
+    font-size:14px;line-height:1.6}
+  .side .side-auth a{display:inline-flex;align-items:center;min-height:44px;padding:0 6px}
+
+  body.menu-open{overflow:hidden}
+
+  /* 主区：顶栏之下立即出现正文 */
+  .main{padding:20px 16px 56px;max-width:none}
+  .crumb{margin-bottom:8px}
+  h1{font-size:26px;line-height:1.3}
+  .meta{gap:6px 12px;padding-bottom:12px;margin-bottom:20px}
+  .article{font-size:16px;line-height:1.8}
+  .article h2{font-size:20px;margin:28px 0 12px}
+  .article h3{font-size:17px;margin:22px 0 9px}
+  /* 平板宽度可用两列，手机才单列 */
+  .cards{grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:12px}
+  .card{padding:16px 16px 14px}
+  .toc{position:static;padding:12px 14px;margin-bottom:20px}
+  .toc-item{padding:9px 0 9px 12px;font-size:14px}
+  .foot{margin-top:36px;font-size:11.5px;flex-direction:column;gap:4px}
+  .foot a{display:inline-flex;align-items:center;min-height:44px;padding:0 2px}
+  .actions{flex-wrap:wrap;gap:8px}
+  .btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+  table.t{font-size:12.5px}
+  table.t th,table.t td{padding:9px 10px}
+  .table-wrap th,.table-wrap td{white-space:nowrap}
+  .admin-head{flex-wrap:wrap;gap:6px 10px}
+  .admin-head h1{font-size:25px}
+}
+@media (max-width:560px){
+  .cards{grid-template-columns:1fr}
+}
+@media (max-width:420px){
+  .grid2{grid-template-columns:1fr}
+  .ov{padding:12px 9px}
+}
+
+/* ============================================================
+   首页：概览条 / 标签入口 / 分区标题
+   ============================================================ */
+.hero{
+  position:relative;overflow:hidden;
+  background:linear-gradient(135deg,var(--accent-soft) 0%,var(--panel) 55%,var(--panel2) 100%);
+  border:1px solid var(--line);border-radius:16px;
+  padding:30px 32px 28px;margin-bottom:18px;box-shadow:var(--shadow);
+}
+.hero::after{
+  content:"";position:absolute;right:-60px;top:-70px;width:220px;height:220px;
+  border-radius:50%;background:radial-gradient(circle,var(--accent2-soft) 0%,transparent 70%);
+  pointer-events:none;
+}
+.hero-kicker{
+  font-size:12px;letter-spacing:1.6px;text-transform:uppercase;font-weight:700;
+  color:var(--accent);margin-bottom:8px;
+}
+.hero h1{font-size:34px;margin:0 0 8px;letter-spacing:.5px}
+.hero p{margin:0;color:var(--sub);font-size:14.5px;line-height:1.75;max-width:560px}
+.hero-search{display:flex;gap:8px;margin-top:20px;max-width:520px}
+.hero-search input{
+  flex:1;min-width:0;min-height:44px;padding:11px 15px;border:1px solid var(--line2);
+  border-radius:11px;background:var(--panel);color:var(--ink);font-size:15px;
+  outline:none;transition:border-color .15s,box-shadow .15s;
+}
+.hero-search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.hero-search button{
+  min-height:44px;padding:0 22px;border:1px solid var(--accent);border-radius:11px;
+  background:var(--accent);color:#fff;font-size:14.5px;font-weight:600;cursor:pointer;
+  font-family:inherit;transition:background .15s,transform .1s;
+}
+.hero-search button:hover{background:var(--accent-ink)}
+.hero-search button:active{transform:scale(.97)}
+
+.ov-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:26px;
+}
+.ov{
+  display:flex;flex-direction:column;gap:2px;align-items:flex-start;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px 18px;box-shadow:var(--shadow);color:var(--ink);
+  transition:border-color .18s,transform .18s,box-shadow .18s;
+}
+a.ov:hover{border-color:var(--accent);transform:translateY(-2px);
+  box-shadow:var(--shadow-lg);color:var(--ink);text-decoration:none}
+.ov b{font-size:23px;font-weight:800;line-height:1.15;letter-spacing:.3px}
+.ov b .u{font-size:12px;font-weight:500;color:var(--sub);margin-left:3px}
+.ov span{font-size:12px;color:var(--sub)}
+.ov.warm b{color:var(--warm)}
+.ov.acc b{color:var(--accent)}
+
+.sec-h{
+  display:flex;align-items:baseline;gap:10px;margin:8px 0 14px;font-size:17px;
+  font-weight:700;color:var(--ink);letter-spacing:.2px;
+}
+.sec-h::before{
+  content:"";width:4px;height:17px;border-radius:2px;background:var(--accent);
+  display:inline-block;flex-shrink:0;
+}
+.sec-h .sec-more{
+  margin-left:auto;font-size:12.5px;font-weight:500;color:var(--sub);
+  padding:6px 2px;
+}
+.sec-h .sec-more:hover{color:var(--accent)}
+.sec-sub{font-size:12.5px;color:var(--faint);font-weight:400;margin-left:2px}
+
+.tag-cloud{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:30px}
+.tag-chip{
+  display:inline-flex;align-items:center;gap:7px;min-height:44px;
+  padding:9px 16px;border-radius:11px;background:var(--panel);
+  border:1px solid var(--line);color:var(--ink2);font-size:14px;
+  box-shadow:var(--shadow);transition:border-color .16s,color .16s,
+    transform .16s,box-shadow .16s,background .16s;
+}
+.tag-chip:hover{
+  border-color:var(--accent);color:var(--accent);text-decoration:none;
+  transform:translateY(-2px);box-shadow:var(--shadow-lg);background:var(--panel);
+}
+.tag-chip:active{transform:scale(.98)}
+.tag-chip .n{
+  font-size:11.5px;font-weight:600;color:var(--sub);background:var(--soft);
+  border-radius:20px;padding:1px 8px;min-width:20px;text-align:center;
+}
+.tag-chip:hover .n{background:var(--accent-soft);color:var(--accent-ink)}
+
+.cta{
+  margin-top:38px;padding:26px 30px;border-radius:16px;
+  background:linear-gradient(135deg,var(--panel) 0%,var(--accent-soft) 100%);
+  border:1px solid var(--line);box-shadow:var(--shadow);
+  display:flex;flex-direction:column;gap:6px;
+}
+.cta-t{font-size:17px;font-weight:700;color:var(--ink);letter-spacing:.2px}
+.cta-d{font-size:13.5px;color:var(--sub);line-height:1.75;max-width:600px}
+.cta-a{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+
+/* 卡片信息行 */
+.card .c-foot{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:11px;
+  padding-top:10px;border-top:1px dashed var(--line);
+}
+.card .c-tag{
+  font-size:11.5px;padding:2px 9px;border-radius:20px;
+  background:var(--accent2-soft);color:var(--accent2);
+}
+.card .c-time{margin-left:auto;font-size:11.5px;color:var(--faint)}
+
+@media (max-width:820px){
+  .hero{padding:22px 18px 20px;border-radius:14px;margin-bottom:14px}
+  .hero h1{font-size:27px}
+  .hero p{font-size:14px}
+  .hero-search{margin-top:16px}
+  .hero-search button{padding:0 18px}
+  .ov-grid{grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:22px}
+  .ov{padding:13px 15px}
+  .ov b{font-size:21px}
+  .sec-h{font-size:16px;margin:4px 0 12px}
+  .tag-cloud{gap:8px;margin-bottom:24px}
+  .tag-chip{min-height:44px;font-size:13.5px;padding:9px 13px}
+  .card .c-foot{margin-top:9px}
+  .cta{margin-top:28px;padding:20px 18px;border-radius:14px}
+  .cta-t{font-size:16px}
+  .cta-a{margin-top:14px}
+  .cta-a .btn{flex:1 1 auto}
+}
+
+/* ── 组件打磨：按下反馈 / 焦点态 / 链接可达性 ── */
+.card:active{transform:translateY(0) scale(.995);box-shadow:var(--shadow)}
+.btn:focus-visible,.tag:focus-visible,.tag-chip:focus-visible,.card:focus-visible,
+.nav a:focus-visible,.side ul li a:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px;
+}
+.btn.primary:active{background:var(--accent-ink);transform:scale(.98)}
+.hit:active{background:var(--accent-soft)}
+.toc-item:active,.bl-item:active,.tag:active{transform:scale(.98)}
+input,textarea,select{font-family:inherit}
+.form input:hover,.form textarea:hover,.search input:hover,.hero-search input:hover{
+  border-color:var(--line2);
 }
 @media (prefers-reduced-motion:reduce){
   *{transition:none !important;animation:none !important}
+  .card:hover,.ov:hover,.tag-chip:hover{transform:none !important}
 }
 """
 
@@ -990,6 +1307,28 @@ table.t tbody tr:hover td{background:var(--panel2)}
 .drop b{color:var(--ink)}
 #pv{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap}
 #pv img{height:86px;border-radius:9px;border:1px solid var(--line);box-shadow:var(--shadow)}
+
+/* 窄屏：后台标签横向滑动，表格横向滚动，点击区域放大 */
+@media (max-width:820px){
+  .tabs{
+    flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    gap:2px;margin:14px 0 20px;scrollbar-width:none;
+    border-bottom:1px solid var(--line);
+  }
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs a{
+    flex:0 0 auto;white-space:nowrap;min-height:44px;
+    display:inline-flex;align-items:center;padding:0 14px;
+  }
+  .metric .v{font-size:24px}
+  .mini{min-height:44px;padding:10px 13px;display:inline-flex;
+    align-items:center;justify-content:center}
+  .row-actions{display:flex;gap:6px;flex-wrap:nowrap}
+  .thumbs{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+  .thumb img{height:96px}
+  .drop{padding:22px 14px}
+  .cmdblock{font-size:11.5px;padding:13px}
+}
 """
 
 
@@ -1031,6 +1370,67 @@ PAGE_JS = """
   window.addEventListener('beforeunload', function (e) {
     if (dirty) { e.preventDefault(); e.returnValue = ''; }
   });
+
+  // ---- 移动端抽屉菜单 ----
+  var body = document.body;
+  var side = document.getElementById('sidebar');
+  var btn = document.getElementById('menuBtn');
+  var scrim = document.getElementById('scrim');
+  var closeBtn = document.getElementById('sideClose');
+
+  function menuOpen() {
+    if (!side) return;
+    side.classList.add('open');
+    body.classList.add('menu-open');
+    if (scrim) scrim.classList.add('on');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    // 打开时把焦点移到关闭按钮，方便键盘/读屏用户
+    if (closeBtn) { try { closeBtn.focus({preventScroll: true}); } catch (e) {} }
+  }
+  function menuClose() {
+    if (!side) return;
+    side.classList.remove('open');
+    body.classList.remove('menu-open');
+    if (scrim) scrim.classList.remove('on');
+    if (btn) {
+      btn.setAttribute('aria-expanded', 'false');
+      try { btn.focus({preventScroll: true}); } catch (e) {}
+    }
+  }
+  function menuToggle() {
+    if (side && side.classList.contains('open')) menuClose(); else menuOpen();
+  }
+  if (btn) btn.addEventListener('click', menuToggle);
+  if (scrim) scrim.addEventListener('click', menuClose);
+  if (closeBtn) closeBtn.addEventListener('click', menuClose);
+  // 抽屉里点了链接就收起（锚点跳转不收起）
+  if (side) {
+    side.addEventListener('click', function (e) {
+      var a = e.target.closest ? e.target.closest('a') : null;
+      if (!a) return;
+      var href = a.getAttribute('href') || '';
+      if (href.charAt(0) === '#') return;
+      menuClose();
+    });
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && side && side.classList.contains('open')) menuClose();
+  });
+  // 可横向滚动的表格：加个右缘阴影提示，告诉用户还能往右滑
+  function markScrollables() {
+    document.querySelectorAll('.table-wrap').forEach(function (el) {
+      el.classList.toggle('is-scrollable', el.scrollWidth > el.clientWidth + 2);
+    });
+  }
+  markScrollables();
+  window.addEventListener('resize', markScrollables);
+  window.addEventListener('load', markScrollables);
+
+  // 转屏到桌面宽度时还原状态，避免残留锁滚动
+  var mq = window.matchMedia('(min-width:821px)');
+  var onWide = function (m) { if (m.matches) { menuClose(); } };
+  if (mq.addEventListener) mq.addEventListener('change', onWide);
+  else if (mq.addListener) mq.addListener(onWide);
 })();
 </script>
 """
@@ -1074,7 +1474,9 @@ def _layout(title: str, inner: str, active: str = "", crumb: str = "",
     _html = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151a1f" media="(prefers-color-scheme: dark)">
 <title>{_esc(title)} · {SITE_NAME}</title>
 <meta name="description" content="{SITE_SUB}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -1082,18 +1484,30 @@ def _layout(title: str, inner: str, active: str = "", crumb: str = "",
 {tailwind_head()}
 <style>{CSS}{ADMIN_CSS}{globals().get("AUTH_CSS", "")}</style>
 </head><body>
+<!-- 移动端顶栏：单行，正文首屏可见 -->
+<header class="topbar">
+  <a class="tb-logo" href="/" aria-label="{SITE_NAME} 首页">
+    <img src="/favicon.svg" alt="">星海<span>百科</span></a>
+  <div class="tb-spacer"></div>
+  <button class="tb-btn" type="button" id="menuBtn" aria-label="打开菜单"
+          aria-controls="sidebar" aria-expanded="false">
+    <i class="burger"></i></button>
+</header>
+<button class="scrim" id="scrim" type="button" tabindex="-1" aria-hidden="true"></button>
 <div class="layout">
-  <aside class="side">
+  <aside class="side" id="sidebar">
+    <button class="side-close" type="button" id="sideClose" aria-label="关闭菜单">✕</button>
     <div class="logo"><img src="/favicon.svg" alt="" class="logo-img">星海<span>百科</span></div>
     <div class="sub">{SITE_SUB} · {total} 个词条</div>
     <form class="search" action="/search" method="get">
-      <input name="q" placeholder="搜索词条…" autocomplete="off">
+      <input name="q" placeholder="搜索词条…" autocomplete="off"
+             enterkeyhint="search" aria-label="搜索词条">
       <button type="submit">搜</button>
     </form>
-    <nav class="nav">{nav}</nav>
+    <nav class="nav" aria-label="主导航">{nav}</nav>
     <h3>最近更新</h3>
     <ul>{side_recent or '<li style="color:var(--sub);font-size:12.5px">还没有内容</li>'}</ul>
-    <div style="margin-top:24px;font-size:12px;color:var(--sub)">
+    <div class="side-auth" style="margin-top:24px;font-size:12px;color:var(--sub)">
       {signed or '<a href="/login">编辑登录</a>'}
     </div>
   </aside>
@@ -1112,8 +1526,8 @@ def _layout(title: str, inner: str, active: str = "", crumb: str = "",
     return _html.replace("{CSRF_FIELD}", _csrf_field()).replace("{PAGE_JS}", PAGE_JS)
 
 
-def page_card(name: str, page: Dict[str, Any]) -> str:
-    """词条卡片的摘要：去掉 markdown 记号，只留纯文本"""
+def _card_text(page: Dict[str, Any], width: int = 110) -> str:
+    """卡片摘要：去掉 markdown 记号，只留纯文本"""
     text = str(page.get("body") or "")
     text = re.sub(r"^\s*#{1,6}\s*", "", text, flags=re.M)
     text = re.sub(r"^\s*==\s*(.+?)\s*==\s*$", r"\1", text, flags=re.M)
@@ -1121,28 +1535,120 @@ def page_card(name: str, page: Dict[str, Any]) -> str:
     text = re.sub(r"[*_>" + re.escape(chr(96)) + r"]", "", text)
     text = re.sub(r"^\s*([-+]|\d+[.、])\s+", "\u00b7 ", text, flags=re.M)
     text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
-    body = re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", text).strip()[:width]
+
+
+def _ago(ts: float) -> str:
+    """更新时间的人话版本：刚刚 / 3 小时前 / 2 天前 / 具体日期"""
+    try:
+        delta = max(0.0, _now() - float(ts or 0))
+    except Exception:
+        return ""
+    if delta < 120:
+        return "刚刚"
+    if delta < 3600:
+        return f"{int(delta // 60)} 分钟前"
+    if delta < 86400:
+        return f"{int(delta // 3600)} 小时前"
+    if delta < 86400 * 7:
+        return f"{int(delta // 86400)} 天前"
+    return datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d")
+
+
+def page_card(name: str, page: Dict[str, Any], show_meta: bool = False) -> str:
+    body = _card_text(page)
+    if not show_meta:
+        return (f'<a class="card" href="/p/{quote(name)}">'
+                f'<div class="t">{_esc(name)}</div>'
+                f'<div class="d">{_esc(body)}</div></a>')
+    tags = (page.get("tags") or [])[:2]
+    tag_html = "".join(f'<span class="c-tag">{_esc(t)}</span>' for t in tags)
+    when = _ago(page.get("updated", 0))
+    foot = ""
+    if tag_html or when:
+        foot = f'<div class="c-foot">{tag_html}<span class="c-time">{when}</span></div>'
     return (f'<a class="card" href="/p/{quote(name)}">'
             f'<div class="t">{_esc(name)}</div>'
-            f'<div class="d">{_esc(body[:110])}</div></a>')
+            f'<div class="d">{_esc(body)}</div>{foot}</a>')
+
+
+def tag_counts(pages: Dict[str, Any]) -> Dict[str, int]:
+    """统计每个标签下有多少词条"""
+    counts: Dict[str, int] = {}
+    for p in pages.values():
+        for t in (p.get("tags") or []):
+            counts[t] = counts.get(t, 0) + 1
+    return counts
 
 
 def view_home() -> str:
     data = load_pages()
     pages = data.get("pages") or {}
     if not pages:
-        inner = ('<h1>欢迎来到星海百科</h1>'
-                 '<div class="meta"><span>这里还没有词条</span></div>'
-                 '<div class="empty">发个词条吧：点左侧「新建词条」，'
-                 '或用编辑口令登录后创建。</div>')
+        inner = ('<section class="hero"><div class="hero-kicker">知识库</div>'
+                 f'<h1>欢迎来到{SITE_NAME}</h1>'
+                 f'<p>{SITE_SUB}</p>'
+                 '<form class="hero-search" action="/search" method="get">'
+                 '<input name="q" placeholder="搜索词条…" autocomplete="off">'
+                 '<button type="submit">搜索</button></form></section>'
+                 '<div class="empty">这里还没有词条。'
+                 '<a href="/new">新建第一个词条</a>，或用编辑口令登录后创建。</div>')
         return _layout("首页", inner, "home")
     recent = sorted(pages.items(), key=lambda kv: -float(kv[1].get("updated", 0)))
-    cards = "".join(page_card(n, p) for n, p in recent[:12])
-    inner = (f'<h1>{SITE_NAME}</h1>'
-             f'<div class="meta"><span>{len(pages)} 个词条</span>'
-             f'<span>最近更新 {datetime.fromtimestamp(recent[0][1].get("updated", _now())).strftime("%Y-%m-%d")}</span>'
-             f'<span>{SITE_SUB}</span></div>'
-             f'<div class="cards">{cards}</div>')
+    counts = tag_counts(pages)
+    tag_total = len(counts)
+    last_ts = max(float(p.get("updated", 0)) for p in pages.values())
+    last_txt = datetime.fromtimestamp(last_ts).strftime("%Y-%m-%d")
+
+    # ── 概览条：词条数 / 标签数 / 最后更新 ──
+    stats = (
+        '<div class="ov-grid">'
+        f'<a class="ov acc" href="/all"><b>{len(pages)}<span class="u">篇</span></b>'
+        '<span>词条总数</span></a>'
+        f'<a class="ov" href="/tags"><b>{tag_total}<span class="u">个</span></b>'
+        '<span>标签分类</span></a>'
+        f'<a class="ov warm" href="/recent"><b>{_esc(_ago(last_ts))}</b>'
+        f'<span>最后更新 · {_esc(last_txt)}</span></a>'
+        f'<a class="ov" href="/new"><b>＋</b><span>新建词条</span></a>'
+        '</div>')
+
+    # ── 标签快捷入口：按词条数排序，取前 12 个 ──
+    top_tags = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:12]
+    tag_html = "".join(
+        f'<a class="tag-chip" href="/tag/{quote(t)}">{_esc(t)}'
+        f'<span class="n">{c}</span></a>'
+        for t, c in top_tags) or '<div class="empty" style="padding:20px 0">还没有标签</div>'
+    more_tags = (f'<a class="sec-more" href="/tags">全部 {tag_total} 个 →</a>'
+                 if tag_total > len(top_tags) else
+                 '<a class="sec-more" href="/tags">查看全部 →</a>')
+
+    # ── 最近更新卡片 ──
+    cards = "".join(page_card(n, p, show_meta=True) for n, p in recent[:9])
+    more_recent = (f'<a class="sec-more" href="/recent">全部 {len(pages)} 篇 →</a>')
+
+    # ── 底部行动区：补足长页面留白，也引导参与共建 ──
+    cta = ('<section class="cta">'
+           '<div class="cta-t">这里的内容都是群友一条条写下来的</div>'
+           '<div class="cta-d">发现写错、写漏，或者有你更懂的东西？'
+           '拿到编辑权限后就能直接改，每次保存都会留历史版本。</div>'
+           '<div class="cta-a"><a class="btn primary" href="/new">＋ 写一篇词条</a>'
+           '<a class="btn" href="/apply">申请编辑权限</a></div>'
+           '</section>')
+
+    inner = (f'<section class="hero"><div class="hero-kicker">欢迎来到</div>'
+             f'<h1>{SITE_NAME}</h1>'
+             f'<p>{SITE_SUB} · 收录群里的约定、教程和反复被问的问题，'
+             f'搜一下通常就有答案。</p>'
+             '<form class="hero-search" action="/search" method="get">'
+             '<input name="q" placeholder="搜索标题 / 正文 / 标签…" '
+             'autocomplete="off" enterkeyhint="search" aria-label="搜索词条">'
+             '<button type="submit">搜索</button></form></section>'
+             f'{stats}'
+             f'<h2 class="sec-h">按标签浏览{more_tags}</h2>'
+             f'<div class="tag-cloud">{tag_html}</div>'
+             f'<h2 class="sec-h">最近更新{more_recent}</h2>'
+             f'<div class="cards">{cards}</div>'
+             f'{cta}')
     return _layout("首页", inner, "home")
 
 
@@ -1382,9 +1888,14 @@ def view_page(name: str) -> str:
                      f'<input type="hidden" name="name" value="{_esc(name)}">'
                      f'<button class="btn" style="color:#b4573c;border-color:#e0b9ad">'
                      f'删除</button></form>')
+    tag_html = ("".join(f'<a class="tag" href="/tag/{quote(t)}">{_esc(t)}</a>'
+                         for t in (page.get("tags") or []))
+                or '<span class="meta-none">未分类</span>')
+    words = len(re.sub(r"\s+", "", str(page.get("body") or "")))
     inner = (f'<h1>{_esc(name)}</h1>'
-             f'<div class="meta"><span>🕒 {updated}</span>'
-             f'<span>✏️ {int(page.get("edits", 0))} 次编辑</span>{tags}</div>'
+             f'<div class="meta"><span>🕒 更新于 {updated}</span>'
+             f'<span>✏️ {int(page.get("edits", 0))} 次编辑</span>'
+             f'<span>📄 {words} 字</span>{tag_html}</div>'
              f'{toc_html}'
              f'<article class="article">{body_html or "<p style=color:var(--sub)>（还没有正文）</p>"}</article>'
              f'{backlinks_html}'
@@ -1396,8 +1907,11 @@ def view_page(name: str) -> str:
 def view_all() -> str:
     data = load_pages()
     pages = data.get("pages") or {}
-    cards = "".join(page_card(n, p) for n, p in sorted(pages.items()))
-    inner = (f'<h1>全部词条</h1><div class="meta"><span>{len(pages)} 个</span></div>'
+    cards = "".join(page_card(n, p, show_meta=True)
+                    for n, p in sorted(pages.items()))
+    inner = (f'<h1>全部词条</h1>'
+             f'<div class="meta"><span>{len(pages)} 个词条</span>'
+             f'<span>按标题排序</span></div>'
              f'<div class="cards">{cards or "<div class=empty>暂无词条</div>"}</div>')
     return _layout("全部词条", inner, "all")
 
@@ -1456,28 +1970,42 @@ def view_search(q: str) -> str:
     for _, n, p in hits[:40]:
         body = str(p.get("body") or "")
         snippet = _snippet(body, q)
-        rows += (f'<div class="hit"><a class="hit-t" href="/p/{quote(n)}">{_highlight(n, q)}</a>'
-                 f'<div class="hit-b">{snippet}</div></div>')
+        tags = (p.get("tags") or [])[:2]
+        tag_html = "".join(f'<span class="hit-tag">{_esc(t)}</span>' for t in tags)
+        when = _ago(p.get("updated", 0))
+        meta = f'{tag_html}<span class="hit-time">{_esc(when)}</span>' \
+            if (tag_html or when) else ""
+        rows += (f'<a class="hit" href="/p/{quote(n)}">'
+                 f'<div class="hit-main">'
+                 f'<span class="hit-t">{_highlight(n, q)}</span>'
+                 f'<div class="hit-b">{snippet}</div>'
+                 f'{f"""<div class="hit-meta">{meta}</div>""" if meta else ""}'
+                 f'</div><span class="hit-go" aria-hidden="true">›</span></a>')
+    # 没有结果时给点建议
+    tips = ""
+    if not hits and q:
+        tips = ('<div class="empty">没有找到相关词条。'
+                '换个关键词试试，或者自己写一篇：'
+                f'<a href="/new?title={quote(q)}">创建「{_esc(q)}」</a></div>')
     inner = (f'<h1>搜索：{_esc(q)}</h1>'
              f'<div class="meta"><span>命中 {len(hits)} 个词条</span></div>'
-             + (f'<div class="hits">{rows}</div>' if hits else
-                '<div class="empty">没有找到相关词条。'
-                f'<a href="/new?title={quote(q)}">创建一个？</a></div>'))
+             + (f'<div class="hits">{rows}</div>' if hits else tips))
     return _layout("搜索", inner, crumb=f'搜索 / {_esc(q)}')
 
 
 def view_tags() -> str:
     data = load_pages()
-    counts: Dict[str, int] = {}
-    for p in (data.get("pages") or {}).values():
-        for t in (p.get("tags") or []):
-            counts[t] = counts.get(t, 0) + 1
+    counts = tag_counts(data.get("pages") or {})
+    total_pages = len(data.get("pages") or {})
     chips = "".join(
-        f'<a class="tag" style="font-size:13.5px;padding:4px 12px;margin:4px" '
-        f'href="/tag/{quote(t)}">{_esc(t)} ×{c}</a>'
-        for t, c in sorted(counts.items(), key=lambda kv: -kv[1]))
-    inner = (f'<h1>标签</h1><div class="meta"><span>{len(counts)} 个标签</span></div>'
-             f'<div>{chips or "<div class=empty>还没有标签</div>"}</div>')
+        f'<a class="tag-chip" href="/tag/{quote(t)}">{_esc(t)}'
+        f'<span class="n">{c}</span></a>'
+        for t, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    inner = (f'<h1>标签</h1>'
+             f'<div class="meta"><span>{len(counts)} 个标签</span>'
+             f'<span>{total_pages} 个词条</span>'
+             f'<span>按词条数排序</span></div>'
+             f'<div class="tag-cloud">{chips or "<div class=empty>还没有标签</div>"}</div>')
     return _layout("标签", inner, "tags")
 
 
@@ -1485,9 +2013,11 @@ def view_tag(tag: str) -> str:
     data = load_pages()
     pages = {n: p for n, p in (data.get("pages") or {}).items()
              if tag in (p.get("tags") or [])}
-    cards = "".join(page_card(n, p) for n, p in sorted(pages.items()))
+    cards = "".join(page_card(n, p, show_meta=True)
+                    for n, p in sorted(pages.items()))
     inner = (f'<h1>标签：{_esc(tag)}</h1>'
-             f'<div class="meta"><span>{len(pages)} 个词条</span></div>'
+             f'<div class="meta"><span>{len(pages)} 个词条</span>'
+             f'<a href="/tags">全部标签</a></div>'
              f'<div class="cards">{cards or "<div class=empty>这个标签下还没有词条</div>"}</div>')
     return _layout("标签", inner, "tags", crumb=f'<a href="/tags">标签</a> / {_esc(tag)}')
 
@@ -1496,8 +2026,10 @@ def view_recent() -> str:
     data = load_pages()
     pages = sorted((data.get("pages") or {}).items(),
                    key=lambda kv: -float(kv[1].get("updated", 0)))[:50]
-    cards = "".join(page_card(n, p) for n, p in pages)
-    inner = (f'<h1>最近更新</h1><div class="meta"><span>最近 {len(pages)} 条</span></div>'
+    cards = "".join(page_card(n, p, show_meta=True) for n, p in pages)
+    inner = (f'<h1>最近更新</h1>'
+             f'<div class="meta"><span>最近 {len(pages)} 条</span>'
+             f'<span>按更新时间排序</span></div>'
              f'<div class="cards">{cards or "<div class=empty>暂无</div>"}</div>')
     return _layout("最近更新", inner, "recent")
 
@@ -2001,8 +2533,10 @@ def view_admin_home() -> str:
       {_metric("运行时长", load['uptime'], "", "服务器连续运行")}
     </div>
     <h2 style="font-size:17px;margin:26px 0 12px">最近编辑</h2>
+    <div class="table-wrap">
     <table class="t"><thead><tr><th>词条</th><th>标签</th><th>编辑次数</th><th>更新时间</th></tr></thead>
     <tbody>{rows or '<tr><td colspan=4 style="color:var(--sub)">还没有词条</td></tr>'}</tbody></table>
+    </div>
     """
     return _layout("后台", inner)
 
@@ -2149,9 +2683,11 @@ def view_admin_pages() -> str:
         <button class="mini no">清空所有词条</button>
       </form>
     </div>
+    <div class="table-wrap">
     <table class="t"><thead><tr><th>标题</th><th>标签</th><th>字数</th>
     <th>编辑</th><th>更新时间</th><th>操作</th></tr></thead>
     <tbody>{rows or '<tr><td colspan=6 style="color:var(--sub)">还没有词条</td></tr>'}</tbody></table>
+    </div>
     """
     return _layout("词条管理", inner)
 
@@ -2417,11 +2953,16 @@ AUTH_CSS = """
 .auth .sub2{text-align:center;font-size:13px;color:var(--sub);margin-bottom:22px}
 .auth .field{margin-bottom:15px}
 .auth label{display:block;font-size:12.5px;color:var(--sub);margin-bottom:6px}
-.auth input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:9px;
-  background:var(--panel);color:var(--ink);font-size:15px;outline:none}
-.auth input:focus{border-color:var(--accent)}
-.auth button{width:100%;padding:12px;border:none;border-radius:9px;
-  background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+.auth input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel);color:var(--ink);font-size:15px;outline:none;
+  transition:border-color .15s,box-shadow .15s;min-height:46px}
+.auth input:hover{border-color:var(--line2)}
+.auth input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.auth button{width:100%;min-height:46px;padding:13px;border:none;border-radius:10px;
+  background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer;
+  transition:background .15s,transform .1s,box-shadow .15s;font-family:inherit}
+.auth button:hover{background:var(--accent-ink);box-shadow:var(--shadow)}
+.auth button:active{transform:scale(.985)}
 .auth .foot2{text-align:center;font-size:13px;color:var(--sub);margin-top:18px;line-height:2}
 .auth .hint{font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5}
 .auth .capbox{margin-bottom:18px}
@@ -2646,12 +3187,16 @@ def view_admin_cookies(msg: str = "", err: str = "") -> str:
     {_admin_tabs("cookies")}
     {notice}{warn}
     <h2 style="font-size:16px;margin:0 0 10px">待审核申请</h2>
+    <div class="table-wrap">
     <table class="t"><thead><tr><th>用户名</th><th>邮箱</th><th>理由</th><th>时间</th><th>操作</th></tr></thead>
     <tbody>{rows or '<tr><td colspan=5 style="color:var(--sub)">没有待审申请</td></tr>'}</tbody></table>
+    </div>
     <h2 style="font-size:16px;margin:26px 0 10px">全部账号</h2>
+    <div class="table-wrap">
     <table class="t"><thead><tr><th>用户名</th><th>邮箱</th><th>邮箱验证</th><th>Cookie</th>
     <th>注册时间</th><th>操作</th></tr></thead>
     <tbody>{urows or '<tr><td colspan=6 style="color:var(--sub)">还没有注册用户</td></tr>'}</tbody></table>
+    </div>
     """
     return _layout("Cookie 分发", inner)
 
@@ -4713,8 +5258,10 @@ async def route_admin_pages_deleted() -> HTMLResponse:
       <div class="t">最近删除的词条 · 最多保留 100 条</div></div>
     {_admin_tabs("pages")}
     <div style="margin-bottom:14px"><a class="btn" href="/admin/pages">← 回到词条管理</a></div>
+    <div class="table-wrap">
     <table class="t"><thead><tr><th>标题</th><th>字数</th><th>删除者</th><th>时间</th><th>操作</th></tr></thead>
     <tbody>{rows or '<tr><td colspan=5 style="color:var(--sub)">回收站是空的</td></tr>'}</tbody></table>
+    </div>
     """
     return HTMLResponse(_layout("回收站", inner))
 

@@ -36,6 +36,7 @@ cp wiki.py deploy.sh launcher.py "$STAGE/"
 # 文档一起打包，买家解压就能看
 cp README.md README.en.md CHANGELOG.md LICENSE "$STAGE/" 2>/dev/null || true
 cp *.bat "$STAGE/" 2>/dev/null || true
+cp 上手指南.html "$STAGE/" 2>/dev/null || true
 cp wiki_data/pages.json wiki_data/favicon.svg "$STAGE/wiki_data/"
 touch "$STAGE/wiki_data/uploads/.gitkeep"
 

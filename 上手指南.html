@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WIKI.HS 上手指南</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;background:#08090c;color:#e8eaed;line-height:1.75;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+body::before,body::after{
+  content:"";position:fixed;border-radius:50%;filter:blur(120px);opacity:.45;
+  pointer-events:none;z-index:0;
+}
+body::before{width:620px;height:620px;top:-240px;left:-180px;
+  background:radial-gradient(circle,#2c6e5b,transparent 70%)}
+body::after{width:540px;height:540px;bottom:-220px;right:-150px;
+  background:radial-gradient(circle,#3b7ea1,transparent 70%)}
+.wrap{position:relative;z-index:1;max-width:760px;margin:0 auto;padding:64px 24px 80px}
+.hero{text-align:center;margin-bottom:36px}
+.eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:#7ee0b0;
+  background:rgba(95,199,158,.1);border:1px solid rgba(95,199,158,.22);
+  padding:5px 14px;border-radius:20px;margin-bottom:22px}
+.eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:#5fc79e;
+  box-shadow:0 0 8px #5fc79e}
+h1{font-size:44px;line-height:1.1;margin:0 0 14px;font-weight:800;letter-spacing:-1.2px;
+  background:linear-gradient(180deg,#fff 30%,#9aa4b2);-webkit-background-clip:text;
+  background-clip:text;color:transparent}
+.lead{font-size:16px;color:#8b95a3;margin:0}
+.glass{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);
+  border-radius:20px;backdrop-filter:blur(20px) saturate(160%);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+  box-shadow:0 8px 32px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.06)}
+.step{padding:26px 28px;margin-bottom:16px}
+.step-h{display:flex;align-items:center;gap:13px;margin-bottom:14px}
+.num{width:32px;height:32px;border-radius:10px;flex-shrink:0;
+  background:linear-gradient(135deg,#2c6e5b,#3b8c72);color:#fff;
+  display:grid;place-items:center;font-weight:700;font-size:15px;
+  box-shadow:0 3px 12px rgba(44,110,91,.4)}
+.step-h h2{font-size:17px;margin:0;font-weight:650;color:#e8eaed}
+.step p{margin:0 0 12px;font-size:14px;color:#8b95a3}
+.step p:last-child{margin-bottom:0}
+code{background:rgba(255,255,255,.08);padding:2px 8px;border-radius:6px;
+  color:#7ee0b0;font-size:13px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.07);
+  border-radius:11px;padding:14px 16px;margin:10px 0 0;overflow-x:auto;
+  font-size:13px;color:#7ee0b0;white-space:pre;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+ul{margin:0;padding-left:0;list-style:none}
+li{position:relative;padding-left:19px;margin-bottom:7px;font-size:14px;color:#8b95a3}
+li::before{content:"";position:absolute;left:0;top:10px;width:5px;height:5px;
+  border-radius:50%;background:rgba(95,199,158,.65)}
+.note{padding:16px 20px;margin-bottom:16px;border-radius:14px;font-size:13.5px;
+  background:rgba(201,112,60,.1);border:1px solid rgba(201,112,60,.25);color:#e0a882}
+.foot{text-align:center;margin-top:34px;font-size:13px;color:#5c6673;line-height:1.9}
+@media(max-width:640px){
+  .wrap{padding:40px 16px 60px}
+  h1{font-size:32px}
+  .step{padding:20px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <div class="eyebrow">双击即可 · 无需服务器</div>
+    <h1>WIKI.HS</h1>
+    <p class="lead">给一群人用的知识库网站 · 上手指南</p>
+  </div>
+
+  <div class="glass step">
+    <div class="step-h"><span class="num">1</span><h2>先装 Python 依赖</h2></div>
+    <p>打开命令提示符（Win+R 输入 <code>cmd</code>），执行：</p>
+    <pre>pip install fastapi uvicorn python-multipart</pre>
+    <p style="margin-top:12px;color:#6e7887;font-size:13px">
+      没装 Python？去 python.org 下载 3.10 以上版本，安装时务必勾选
+      <b style="color:#9aa4b2">Add Python to PATH</b>。
+    </p>
+  </div>
+
+  <div class="glass step">
+    <div class="step-h"><span class="num">2</span><h2>双击启动器</h2></div>
+    <p>包里有两个启动器，用途不同：</p>
+    <ul>
+      <li><b style="color:#c9d3dd">启动本地版.bat</b> —— 在自己电脑上编辑内容，导出静态站，发到 GitHub Pages。不需要服务器。</li>
+      <li><b style="color:#c9d3dd">启动服务器版.bat</b> —— 启动完整网站，浏览器访问 http://127.0.0.1:8081</li>
+    </ul>
+    <p style="margin-top:10px">启动器会自动检测依赖，缺什么会提示你装，中英文自动切换。</p>
+  </div>
+
+  <div class="glass step">
+    <div class="step-h"><span class="num">3</span><h2>注册第一个账号</h2></div>
+    <p>浏览器打开提示的地址，点「注册」，填用户名/邮箱/密码，答一道人机验证题。</p>
+    <p>验证邮箱后登录 —— <b style="color:#7ee0b0">第一个注册的账号自动成为站长</b>，
+       拥有全部权限，不用再手动配置。</p>
+  </div>
+
+  <div class="glass step">
+    <div class="step-h"><span class="num">4</span><h2>部署到公网（可选）</h2></div>
+    <p>想让别人也能访问，用 Linux 服务器一键部署：</p>
+    <pre>sudo bash deploy.sh</pre>
+    <p style="margin-top:12px">脚本自动装依赖、注册 systemd 服务、开机自启，约 1 分钟完成。</p>
+    <p style="margin-top:8px;color:#6e7887;font-size:13px">
+      要 HTTPS？加参数：<code>sudo bash deploy.sh --domain 你的域名.com</code>
+    </p>
+  </div>
+
+  <div class="note">
+    <b>遇到问题？</b><br>
+    启动器窗口一闪而过 = 没装 Python 或没加 PATH；<br>
+    提示缺依赖 = 执行第 1 步的 pip 命令；<br>
+    浏览器打不开 = 检查端口 8081 是否被占用。
+  </div>
+
+  <div class="foot">
+    详细文档见同目录的 <code>README.md</code> 和 <code>CHANGELOG.md</code><br>
+    用爱发电 · 公益免费 · MIT 许可
+  </div>
+
+</div>
+</body>
+</html>
