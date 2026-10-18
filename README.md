@@ -22,9 +22,16 @@
 | **启动本地版.bat** | 双击后在浏览器里编辑内容，导出静态站，一键发到 GitHub Pages。**不需要服务器** |
 | **启动服务器版.bat** | 双击后启动完整网站，浏览器访问 `http://127.0.0.1:8081` |
 
-> 第一次用之前，先装依赖：打开 cmd 执行 `pip install fastapi uvicorn python-multipart`
->
-> 双击后如果黑窗口一闪而过，说明 Python 没装或没加到 PATH。
+第一次用之前，先装依赖（打开 cmd 执行）：
+
+```bash
+pip install fastapi uvicorn python-multipart
+```
+
+装好后双击对应的 `.bat` 即可。中文提示由 `launcher.py` 输出，
+`.bat` 本身是纯 ASCII，不会出现乱码或"不是内部或外部命令"的报错。
+
+> 如果双击后窗口一闪而过，说明没装 Python，或安装时没勾选 "Add Python to PATH"。
 
 ## 本地桌面版（推荐给下载者）
 
