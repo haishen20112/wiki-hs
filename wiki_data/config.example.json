@@ -9,5 +9,7 @@
     "user": "",
     "password": "",
     "from": ""
-  }
+  },
+  "ui_mode": "lite",
+  "_说明": "ui_mode: lite=零依赖轻量版（默认，断网可用）；standard=引入 Tailwind CDN，视觉更现代但需联网"
 }

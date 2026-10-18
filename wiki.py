@@ -254,6 +254,66 @@ def load_audit(days: int = AUDIT_KEEP_DAYS) -> List[Dict[str, Any]]:
     return list(reversed(rows))
 
 
+
+# ============================================================
+# UI 模式：lite（默认）/ standard
+#   lite     纯内联 CSS，零外部请求，断网可用，CSP 最严
+#   standard 引入 Tailwind CSS（CDN），视觉更现代，需联网
+# 在 wiki_data/config.json 里设置 "ui_mode": "standard" 即可切换
+# ============================================================
+TAILWIND_CDN = "https://cdn.tailwindcss.com"
+
+
+def ui_mode() -> str:
+    mode = str(load_config().get("ui_mode") or "lite").strip().lower()
+    return "standard" if mode in ("standard", "std", "tailwind", "pro") else "lite"
+
+
+def is_standard_ui() -> bool:
+    return ui_mode() == "standard"
+
+
+def tailwind_head() -> str:
+    """standard 模式注入 Tailwind；lite 模式返回空串"""
+    if not is_standard_ui():
+        return ""
+    return (
+        f'<script src="{TAILWIND_CDN}"></script>'
+        "<script>"
+        "if(window.tailwind){tailwind.config={darkMode:'media',theme:{extend:{"
+        "colors:{brand:'#2c6e5b',brand2:'#3b7ea1',warm:'#c9703c'},"
+        "borderRadius:{card:'0.9rem'},"
+        "boxShadow:{glow:'0 10px 40px rgba(95,199,158,.35)'}"
+        "}}};}"
+        "</script>"
+    )
+
+
+def csp_policy() -> str:
+    """按 UI 模式生成 CSP：standard 模式放行 Tailwind CDN"""
+    parts = [
+        "default-src 'self'",
+        "img-src 'self' data: blob:",
+        "style-src 'self' 'unsafe-inline'",
+        "form-action 'self'",
+        "frame-ancestors 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+    ]
+    if is_standard_ui():
+        # Tailwind CDN 需要执行外部脚本，并动态注入样式
+        parts.append(f"script-src 'self' 'unsafe-inline' {TAILWIND_CDN}")
+        parts.append(f"style-src 'self' 'unsafe-inline' {TAILWIND_CDN}")
+    else:
+        parts.append("script-src 'self' 'unsafe-inline'")
+    return "; ".join(parts)
+
+
+def ui_badge() -> str:
+    """页脚显示当前模式，方便确认切换是否生效"""
+    return "标准版" if is_standard_ui() else "轻量版"
+
+
 # ── 敏感文件权限 ──
 def tighten_perms() -> None:
     """把含隐私数据的文件设为 600"""
@@ -632,40 +692,69 @@ h1{
   font-size:13.5px;color:var(--sub);
 }
 
-/* ── 评论（折叠）── */
-.cmts{
+/* ── 问答（折叠）── */
+.qa{
   margin-top:36px;border:1px solid var(--line);border-radius:var(--radius);
   background:var(--panel);box-shadow:var(--shadow);overflow:hidden;
 }
-.cmts>summary{
+.qa>summary{
   cursor:pointer;padding:14px 18px;font-size:14.5px;font-weight:600;
   color:var(--ink);list-style:none;transition:background .15s;
   display:flex;align-items:center;gap:8px;
 }
-.cmts>summary::-webkit-details-marker{display:none}
-.cmts>summary::after{
+.qa>summary::-webkit-details-marker{display:none}
+.qa>summary::after{
   content:"展开";margin-left:auto;font-size:12px;color:var(--sub);font-weight:400;
 }
-.cmts[open]>summary::after{content:"收起"}
-.cmts>summary:hover{background:var(--soft)}
-.cmt-list{padding:0 18px;border-top:1px solid var(--line)}
-.cmt{padding:13px 0;border-bottom:1px dashed var(--line)}
-.cmt:last-child{border-bottom:none}
-.cmt-h{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
-.cmt-h b{font-size:13.5px;color:var(--ink)}
-.cmt-t{font-size:12px;color:var(--faint);margin-left:auto}
-.cmt-b{
-  font-size:14px;color:var(--ink2);line-height:1.7;
-  white-space:pre-wrap;word-break:break-word;
+.qa[open]>summary::after{content:"收起"}
+.qa>summary:hover{background:var(--soft)}
+.qa-list{padding:0 18px;border-top:1px solid var(--line)}
+.qa-item{border-bottom:1px dashed var(--line)}
+.qa-item:last-child{border-bottom:none}
+.qa-item>summary{
+  cursor:pointer;padding:13px 0;font-size:14px;color:var(--ink2);list-style:none;
+  display:flex;align-items:flex-start;gap:10px;line-height:1.6;
 }
-.cmt-form{padding:14px 18px;border-top:1px solid var(--line);background:var(--panel2)}
-.cmt-form textarea{
-  width:100%;min-height:76px;padding:10px 12px;border:1px solid var(--line);
+.qa-item>summary::-webkit-details-marker{display:none}
+.qa-item>summary::before{
+  content:"▸";color:var(--accent);font-size:12px;flex-shrink:0;margin-top:3px;
+  transition:transform .15s;
+}
+.qa-item[open]>summary::before{transform:rotate(90deg)}
+.qa-q{flex:1;font-weight:600;color:var(--ink);word-break:break-word}
+.qa-ok,.qa-wait{
+  font-size:11px;padding:1px 8px;border-radius:10px;flex-shrink:0;margin-top:2px;
+}
+.qa-ok{background:var(--accent-soft);color:var(--accent-ink)}
+.qa-wait{background:var(--warm-soft);color:var(--warm)}
+.qa-meta{
+  display:flex;align-items:center;gap:6px;font-size:12px;color:var(--faint);
+  padding:0 0 10px 22px;flex-wrap:wrap;
+}
+.qa-meta b{color:var(--sub);font-weight:500}
+.qa-a{
+  margin:0 0 12px 22px;padding:11px 14px;background:var(--panel2);
+  border-left:3px solid var(--accent);border-radius:0 9px 9px 0;font-size:13.5px;
+}
+.qa-a-empty{color:var(--sub);border-left-color:var(--line2)}
+.qa-a b{color:var(--ink);font-size:13px}
+.qa-a-t{font-size:11.5px;color:var(--faint);margin-left:8px}
+.qa-a-b{margin-top:5px;color:var(--ink2);line-height:1.7;white-space:pre-wrap;
+  word-break:break-word}
+.qa-form{padding:0 0 13px 22px}
+.qa-form textarea{
+  width:100%;min-height:68px;padding:9px 11px;border:1px solid var(--line);
+  border-radius:8px;background:var(--bg);color:var(--ink);font-size:13.5px;
+  font-family:inherit;resize:vertical;outline:none;line-height:1.6;
+}
+.qa-form textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.qa-ask{padding:14px 18px;border-top:1px solid var(--line);background:var(--panel2)}
+.qa-ask textarea{
+  width:100%;min-height:70px;padding:10px 12px;border:1px solid var(--line);
   border-radius:9px;background:var(--bg);color:var(--ink);font-size:14px;
   font-family:inherit;resize:vertical;outline:none;line-height:1.6;
 }
-.cmt-form textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-
+.qa-ask textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 /* 表格在窄屏可横向滚动 */
 .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:6px}
 .table-wrap table{min-width:560px}
@@ -849,6 +938,7 @@ def _layout(title: str, inner: str, active: str = "", crumb: str = "",
 <meta name="description" content="{SITE_SUB}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/favicon.svg">
+{tailwind_head()}
 <style>{CSS}{ADMIN_CSS}{globals().get("AUTH_CSS", "")}</style>
 </head><body>
 <div class="layout">
@@ -871,7 +961,7 @@ def _layout(title: str, inner: str, active: str = "", crumb: str = "",
     {notice}
     {inner}
     <div class="foot">
-      <span>{SITE_NAME} · 群友共建 · <a href="/privacy">隐私说明</a></span>
+      <span>{SITE_NAME} · 群友共建 · <a href="/privacy">隐私说明</a> · {ui_badge()}</span>
       <span>{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
     </div>
   </main>
@@ -917,121 +1007,174 @@ def view_home() -> str:
 
 
 # ============================================================
-# 评论（折叠展示，默认收起）
+# Q&A（词条下方问答，折叠展示）
 # ============================================================
-COMMENTS_FILE = DATA_DIR / "comments.json"
-COMMENT_MAX_LEN = 1000
-COMMENT_MAX_PER_PAGE = 200      # 单页最多保留多少条
+QA_FILE = DATA_DIR / "qa.json"
+QA_Q_MAX = 300        # 问题长度上限
+QA_A_MAX = 1000       # 回答长度上限
+QA_MAX_PER_PAGE = 200  # 单页最多保留多少个问题
 
 
-def load_comments() -> Dict[str, Any]:
-    if not COMMENTS_FILE.exists():
+def load_qa() -> Dict[str, Any]:
+    if not QA_FILE.exists():
         return {"items": {}}
     try:
-        data = json.loads(COMMENTS_FILE.read_text(encoding="utf-8"))
+        data = json.loads(QA_FILE.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             return {"items": {}}
         data.setdefault("items", {})
         return data
     except Exception as e:
-        logger.warning(f"[wiki] 读取评论失败: {e}")
+        logger.warning(f"[wiki] 读取问答失败: {e}")
         return {"items": {}}
 
 
-def save_comments(data: Dict[str, Any]) -> None:
+def save_qa(data: Dict[str, Any]) -> None:
     try:
-        tmp = COMMENTS_FILE.with_suffix(".tmp")
+        tmp = QA_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(COMMENTS_FILE)
+        tmp.replace(QA_FILE)
     except Exception as e:
-        logger.error(f"[wiki] 保存评论失败: {e}")
+        logger.error(f"[wiki] 保存问答失败: {e}")
 
 
-def page_comments(name: str) -> List[Dict[str, Any]]:
-    """取某个词条下的评论，新的在前"""
-    items = (load_comments().get("items") or {}).get(name) or []
-    return sorted(items, key=lambda c: -float(c.get("time", 0)))
+def page_qa(name: str) -> List[Dict[str, Any]]:
+    """取某个词条下的问答，新的在前"""
+    items = (load_qa().get("items") or {}).get(name) or []
+    return sorted(items, key=lambda q: -float(q.get("time", 0)))
 
 
-def add_comment(name: str, body: str, user: Dict[str, Any]) -> Tuple[bool, str]:
-    body = (body or "").strip()
-    if not body:
-        return False, "评论不能为空"
-    if len(body) > COMMENT_MAX_LEN:
-        return False, f"评论太长（上限 {COMMENT_MAX_LEN} 字）"
-    data = load_comments()
+def ask_question(name: str, question: str, user: Dict[str, Any]) -> Tuple[bool, str]:
+    question = (question or "").strip()
+    if not question:
+        return False, "问题不能为空"
+    if len(question) > QA_Q_MAX:
+        return False, f"问题太长（上限 {QA_Q_MAX} 字）"
+    data = load_qa()
     items = data["items"].setdefault(name, [])
     items.append({
         "id": secrets.token_hex(6),
-        "body": body,
-        "uid": user.get("uid", ""),
-        "who": str(user.get("username") or "匿名")[:40],
-        "role": effective_role(user),
+        "q": question,
+        "a": "",
+        "asker": str(user.get("username") or "匿名")[:40],
+        "asker_uid": user.get("uid", ""),
+        "answerer": "",
+        "answerer_uid": "",
         "time": _now(),
+        "answered": 0,
     })
-    # 单页评论数上限，砍掉最旧的
-    if len(items) > COMMENT_MAX_PER_PAGE:
-        data["items"][name] = items[-COMMENT_MAX_PER_PAGE:]
-    save_comments(data)
+    if len(items) > QA_MAX_PER_PAGE:
+        data["items"][name] = items[-QA_MAX_PER_PAGE:]
+    save_qa(data)
     return True, ""
 
 
-def delete_comment(name: str, cid: str, user: Dict[str, Any]) -> bool:
-    """自己发的可以删；站长/编辑可以删任何人的"""
-    data = load_comments()
+def answer_question(name: str, qid: str, answer: str,
+                    user: Dict[str, Any]) -> Tuple[bool, str]:
+    """回答一个问题（编辑及以上；提问者本人可补充）"""
+    answer = (answer or "").strip()
+    if not answer:
+        return False, "回答不能为空"
+    if len(answer) > QA_A_MAX:
+        return False, f"回答太长（上限 {QA_A_MAX} 字）"
+    if not can_edit(user):
+        return False, "只有编辑或站长可以回答"
+    data = load_qa()
+    items = data["items"].get(name) or []
+    for q in items:
+        if q.get("id") == qid:
+            q["a"] = answer
+            q["answerer"] = str(user.get("username") or "匿名")[:40]
+            q["answerer_uid"] = user.get("uid", "")
+            q["answered"] = _now()
+            save_qa(data)
+            return True, ""
+    return False, "问题不存在"
+
+
+def delete_question(name: str, qid: str, user: Dict[str, Any]) -> bool:
+    """提问者本人可删；编辑/站长可删任何"""
+    data = load_qa()
     items = data["items"].get(name) or []
     keep = []
     removed = False
-    for c in items:
-        if c.get("id") == cid and (c.get("uid") == user.get("uid")
+    for q in items:
+        if q.get("id") == qid and (q.get("asker_uid") == user.get("uid")
                                    or can_edit(user)):
             removed = True
             continue
-        keep.append(c)
+        keep.append(q)
     if removed:
         data["items"][name] = keep
-        save_comments(data)
+        save_qa(data)
     return removed
 
 
-def _comment_block(name: str) -> str:
-    """词条底部的折叠评论区"""
+def _qa_block(name: str) -> str:
+    """词条底部的折叠问答区：问题折叠，点开看回答"""
     user = CUR_USER["v"]
-    items = page_comments(name)
-    count = len(items)
+    items = page_qa(name)
+    total = len(items)
+    answered = sum(1 for q in items if q.get("a"))
     rows = ""
-    for c in items:
-        role = c.get("role") or "guest"
-        ts = datetime.fromtimestamp(float(c.get("time", 0))).strftime("%m-%d %H:%M")
-        can_del = user and (c.get("uid") == user.get("uid") or can_edit(user))
+    for q in items:
+        qid = _esc(q.get("id"))
+        ts = datetime.fromtimestamp(float(q.get("time", 0))).strftime("%m-%d %H:%M")
+        has_a = bool(q.get("a"))
+        badge = ('<span class="qa-ok">已回答</span>' if has_a
+                 else '<span class="qa-wait">待回答</span>')
+        # 删除按钮
+        can_del = user and (q.get("asker_uid") == user.get("uid") or can_edit(user))
         del_btn = ""
         if can_del:
-            del_btn = (f'<form method="post" action="/comment/delete" style="display:inline">'
+            del_btn = (f'<form method="post" action="/qa/delete" style="display:inline">'
                        f'{{CSRF_FIELD}}'
                        f'<input type="hidden" name="page" value="{_esc(name)}">'
-                       f'<input type="hidden" name="cid" value="{_esc(c.get("id"))}">'
+                       f'<input type="hidden" name="qid" value="{qid}">'
                        f'<button class="mini no" style="padding:2px 8px;font-size:11.5px">'
                        f'删除</button></form>')
-        rows += (f'<div class="cmt">'
-                 f'<div class="cmt-h"><b>{_esc(c.get("who"))}</b>'
-                 f'<span class="badge {role}">{ROLE_NAMES.get(role, role)}</span>'
-                 f'<span class="cmt-t">{ts}</span>{del_btn}</div>'
-                 f'<div class="cmt-b">{_esc(c.get("body"))}</div></div>')
+        # 回答内容
+        if has_a:
+            ans = (f'<div class="qa-a"><b>{_esc(q.get("answerer"))}</b>'
+                   f'<span class="qa-a-t">回答于 '
+                   f'{datetime.fromtimestamp(float(q.get("answered") or 0)).strftime("%m-%d %H:%M")}</span>'
+                   f'<div class="qa-a-b">{_esc(q.get("a"))}</div></div>')
+        else:
+            ans = '<div class="qa-a qa-a-empty">还没有人回答</div>'
+        # 回答表单（编辑以上可见）
+        form = ""
+        if user and can_edit(user):
+            form = (f'<form method="post" action="/qa/answer" class="qa-form">{{CSRF_FIELD}}'
+                    f'<input type="hidden" name="page" value="{_esc(name)}">'
+                    f'<input type="hidden" name="qid" value="{qid}">'
+                    f'<textarea name="answer" required maxlength="{QA_A_MAX}" '
+                    f'placeholder="写下你的回答…">{_esc(q.get("a") or "")}</textarea>'
+                    f'<div style="margin-top:6px"><button class="mini ok" type="submit">'
+                    f'{"更新回答" if has_a else "回答"}</button></div></form>')
+        rows += (f'<details class="qa-item">'
+                 f'<summary><span class="qa-q">{_esc(q.get("q"))}</span>'
+                 f'{badge}</summary>'
+                 f'<div class="qa-meta">提问：<b>{_esc(q.get("asker"))}</b> · {ts}'
+                 f'<span style="margin-left:auto">{del_btn}</span></div>'
+                 f'{ans}{form}</details>')
+    # 提问表单
     if user:
-        form = (f'<form method="post" action="/comment" class="cmt-form">{{CSRF_FIELD}}'
-                f'<input type="hidden" name="page" value="{_esc(name)}">'
-                f'<textarea name="body" required maxlength="{COMMENT_MAX_LEN}" '
-                f'placeholder="说点什么…（{COMMENT_MAX_LEN} 字以内）"></textarea>'
-                f'<div style="margin-top:8px"><button class="btn primary" type="submit">'
-                f'发表评论</button></div></form>')
+        ask_form = (f'<form method="post" action="/qa" class="qa-ask">{{CSRF_FIELD}}'
+                    f'<input type="hidden" name="page" value="{_esc(name)}">'
+                    f'<textarea name="question" required maxlength="{QA_Q_MAX}" '
+                    f'placeholder="有疑问？在这里提问（{QA_Q_MAX} 字以内）"></textarea>'
+                    f'<div style="margin-top:8px"><button class="btn primary" type="submit">'
+                    f'提问</button></div></form>')
     else:
-        form = (f'<div class="empty" style="padding:20px 0;font-size:13.5px">'
-                f'<a href="/login">登录</a> 后可以评论</div>')
+        ask_form = ('<div class="empty" style="padding:18px 0;font-size:13.5px">'
+                    '<a href="/login">登录</a> 后可以提问</div>')
+    empty = ('<div class="empty" style="padding:18px 0;font-size:13.5px">'
+             '还没有提问，有问题就来问</div>')
     return f"""
-    <details class="cmts">
-      <summary>💬 评论（{count}）</summary>
-      <div class="cmt-list">{rows or '<div class="empty" style="padding:20px 0;font-size:13.5px">还没有评论，来抢沙发</div>'}</div>
-      {form}
+    <details class="qa">
+      <summary>❓ 问答（{total}）{f' · 已答 {answered}' if answered else ''}</summary>
+      <div class="qa-list">{rows or empty}</div>
+      {ask_form}
     </details>"""
 
 
@@ -1062,7 +1205,7 @@ def view_page(name: str) -> str:
              f'<span>✏️ {int(page.get("edits", 0))} 次编辑</span>{tags}</div>'
              f'<article class="article">{body_html or "<p style=color:var(--sub)>（还没有正文）</p>"}</article>'
              f'<div class="actions" style="margin-top:30px">{edit_btn}</div>'
-             f'{_comment_block(name)}')
+             f'{_qa_block(name)}')
     return _layout(name, inner, crumb=f'<a href="/">首页</a> / {_esc(name)}')
 
 
@@ -2651,25 +2794,12 @@ def _is_https(req: Request) -> bool:
     return req.url.scheme == "https"
 
 
-# 全局安全响应头。CSP 是防 XSS 的最后一道防线：
-# 站点没有外部脚本、没有内联事件，所以可以收得很紧。
-CSP_POLICY = "; ".join([
-    "default-src 'self'",
-    "img-src 'self' data: blob:",
-    "style-src 'self' 'unsafe-inline'",   # 样式是内联 <style>，需要 inline
-    "script-src 'self' 'unsafe-inline'",  # 少量内联脚本（上传预览等）
-    "form-action 'self'",
-    "frame-ancestors 'self'",
-    "base-uri 'self'",
-    "object-src 'none'",
-])
-
+# 全局安全响应头（CSP 按 UI 模式动态生成，见 csp_policy()）
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "same-origin",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
-    "Content-Security-Policy": CSP_POLICY,
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
 }
@@ -2690,6 +2820,7 @@ async def _auth_middleware(request: Request, call_next):
                              "role": ROLE_OWNER, "email": "", "legacy": True}
             resp = await call_next(request)
             resp.headers.update(SECURITY_HEADERS)
+            resp.headers["Content-Security-Policy"] = csp_policy()
             if _is_https(request):
                 resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
             return resp
@@ -2697,6 +2828,7 @@ async def _auth_middleware(request: Request, call_next):
     CUR_USER["v"] = user
     resp = await call_next(request)
     resp.headers.update(SECURITY_HEADERS)
+    resp.headers["Content-Security-Policy"] = csp_policy()
     # 只在 HTTPS 下加 HSTS，避免 HTTP 环境把自己锁死
     if _is_https(request):
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -2923,64 +3055,316 @@ async def route_download_wiki():
 
 @app.get("/download", response_class=HTMLResponse)
 async def route_download_page() -> HTMLResponse:
-    """下载页（带一个大按钮）"""
+    """发布包下载页（深色毛玻璃风格，零外部依赖）"""
     p = release_zip()
     size = (p.stat().st_size / 1024) if p else 0
-    import hashlib
     md5 = ""
-    if p.exists():
+    if p is not None:
         try:
             md5 = hashlib.md5(p.read_bytes()).hexdigest()
         except Exception:
             md5 = ""
-    box = ("background:var(--panel);border:1px solid var(--line);"
-           "border-radius:12px;padding:18px 22px;font-size:13.5px;line-height:2;"
-           "text-align:left;margin-top:16px")
+
+    css = """
+    <style>
+    body.dl-page{
+      margin:0;padding:0;background:#08090c;color:#e8eaed;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",
+        "Hiragino Sans GB","Microsoft YaHei",sans-serif;
+      -webkit-font-smoothing:antialiased;min-height:100vh;
+    }
+    /* 背景光晕 */
+    body.dl-page::before,body.dl-page::after{
+      content:"";position:fixed;border-radius:50%;filter:blur(120px);
+      opacity:.5;pointer-events:none;z-index:0;
+    }
+    body.dl-page::before{
+      width:640px;height:640px;top:-260px;left:-180px;
+      background:radial-gradient(circle,#2c6e5b 0%,transparent 70%);
+    }
+    body.dl-page::after{
+      width:560px;height:560px;bottom:-240px;right:-160px;
+      background:radial-gradient(circle,#3b7ea1 0%,transparent 70%);
+    }
+    .dl-wrap{
+      position:relative;z-index:1;max-width:760px;margin:0 auto;
+      padding:72px 24px 80px;
+    }
+    /* 毛玻璃卡片 */
+    .glass{
+      background:rgba(255,255,255,.045);
+      border:1px solid rgba(255,255,255,.09);
+      border-radius:20px;
+      backdrop-filter:blur(20px) saturate(160%);
+      -webkit-backdrop-filter:blur(20px) saturate(160%);
+      box-shadow:0 8px 32px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.06);
+    }
+    .hero{text-align:center;padding:48px 36px 40px}
+    .eyebrow{
+      display:inline-flex;align-items:center;gap:7px;
+      font-size:12px;letter-spacing:.5px;color:#7ee0b0;
+      background:rgba(95,199,158,.1);border:1px solid rgba(95,199,158,.22);
+      padding:5px 13px;border-radius:20px;margin-bottom:22px;
+    }
+    .eyebrow::before{
+      content:"";width:6px;height:6px;border-radius:50%;
+      background:#5fc79e;box-shadow:0 0 8px #5fc79e;
+    }
+    .hero h1{
+      font-size:46px;line-height:1.1;margin:0 0 14px;font-weight:800;
+      letter-spacing:-1.2px;
+      background:linear-gradient(180deg,#ffffff 30%,#9aa4b2 100%);
+      -webkit-background-clip:text;background-clip:text;color:transparent;
+    }
+    .hero .tagline{
+      font-size:16px;color:#8b95a3;margin:0 0 34px;line-height:1.6;
+    }
+    /* 主下载按钮：大、圆角、悬浮发光 */
+    .dl-btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:11px;
+      padding:19px 52px;border-radius:999px;
+      background:linear-gradient(135deg,#2c6e5b 0%,#3b8c72 55%,#3b7ea1 100%);
+      color:#fff;font-size:17.5px;font-weight:700;letter-spacing:.2px;
+      text-decoration:none;border:1px solid rgba(255,255,255,.14);
+      box-shadow:0 6px 26px rgba(44,110,91,.42);
+      transition:transform .22s cubic-bezier(.34,1.56,.64,1),
+                 box-shadow .22s ease,filter .22s ease;
+      position:relative;overflow:hidden;
+    }
+    .dl-btn::after{
+      content:"";position:absolute;inset:0;
+      background:linear-gradient(120deg,transparent 30%,rgba(255,255,255,.28) 50%,transparent 70%);
+      transform:translateX(-120%);transition:transform .6s ease;
+    }
+    .dl-btn:hover{
+      transform:translateY(-3px) scale(1.028);
+      box-shadow:0 14px 44px rgba(95,199,158,.55),0 0 0 1px rgba(95,199,158,.4),
+                 0 0 60px rgba(95,199,158,.28);
+      filter:brightness(1.08);
+      text-decoration:none;color:#fff;
+    }
+    .dl-btn:hover::after{transform:translateX(120%)}
+    .dl-btn:active{transform:translateY(-1px) scale(.99)}
+    .dl-btn svg{width:19px;height:19px;flex-shrink:0}
+    .dl-meta{
+      margin-top:20px;font-size:12.5px;color:#6e7887;
+      display:flex;gap:18px;justify-content:center;flex-wrap:wrap;
+    }
+    .dl-meta code{
+      background:rgba(255,255,255,.06);padding:2px 8px;border-radius:6px;
+      color:#9aa4b2;font-size:11.5px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    /* 信息卡片 */
+    .cards{display:grid;gap:16px;margin-top:22px}
+    .card-dl{padding:24px 26px}
+    .card-dl h2{
+      font-size:14px;margin:0 0 14px;color:#c9d3dd;font-weight:650;
+      display:flex;align-items:center;gap:9px;
+    }
+    .card-dl h2 .ico{
+      width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+      background:rgba(95,199,158,.12);border:1px solid rgba(95,199,158,.2);
+      font-size:13px;flex-shrink:0;
+    }
+    .card-dl p,.card-dl li{font-size:13.5px;color:#8b95a3;line-height:1.9;margin:0}
+    .card-dl ul{margin:0;padding-left:0;list-style:none}
+    .card-dl li{padding-left:18px;position:relative}
+    .card-dl li::before{
+      content:"";position:absolute;left:0;top:12px;width:5px;height:5px;
+      border-radius:50%;background:rgba(95,199,158,.6);
+    }
+    .card-dl code{
+      background:rgba(255,255,255,.07);padding:2.5px 9px;border-radius:6px;
+      color:#7ee0b0;font-size:12.5px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    .cmd{
+      display:block;margin:10px 0 0;padding:13px 16px;border-radius:11px;
+      background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.07);
+      color:#7ee0b0;font-size:13px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      overflow-x:auto;white-space:nowrap;
+    }
+    .foot-dl{
+      text-align:center;margin-top:34px;font-size:12.5px;color:#5c6673;
+      line-height:1.9;
+    }
+    .foot-dl a{color:#7ee0b0;text-decoration:none}
+    .foot-dl a:hover{text-decoration:underline}
+    @media (max-width:640px){
+      .dl-wrap{padding:44px 16px 60px}
+      .hero{padding:36px 22px 32px}
+      .hero h1{font-size:33px;letter-spacing:-.8px}
+      .hero .tagline{font-size:14.5px}
+      .dl-btn{padding:16px 36px;font-size:16px;width:100%}
+      .card-dl{padding:20px}
+    }
+    @media (prefers-reduced-motion:reduce){
+      .dl-btn,.dl-btn::after{transition:none}
+    }
+    </style>
+    """
+
+    dl_icon = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+               'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
+               '<path d="M12 3v12"/><path d="m7 11 5 5 5-5"/>'
+               '<path d="M4 19h16"/></svg>')
+
+    # standard 模式：用 Tailwind 类名重写，视觉更接近 Vercel
+    if is_standard_ui():
+        tw = f"""
+        <div class="relative min-h-screen overflow-hidden font-sans">
+          <div class="pointer-events-none absolute -top-64 -left-40 h-[640px] w-[640px]
+               rounded-full bg-emerald-600/25 blur-[130px]"></div>
+          <div class="pointer-events-none absolute -bottom-56 -right-32 h-[560px] w-[560px]
+               rounded-full bg-sky-600/25 blur-[130px]"></div>
+
+          <div class="relative z-10 mx-auto max-w-3xl px-6 py-20">
+            <div class="rounded-[22px] border border-white/10 bg-white/[0.045]
+                 px-9 py-12 text-center shadow-2xl backdrop-blur-xl backdrop-saturate-150">
+              <span class="inline-flex items-center gap-2 rounded-full border border-emerald-400/25
+                    bg-emerald-400/10 px-3.5 py-1 text-[12px] tracking-wide text-emerald-300">
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+                公益免费 · MIT 许可
+              </span>
+              <h1 class="mt-6 bg-gradient-to-b from-white to-slate-400 bg-clip-text
+                   text-[46px] font-extrabold leading-none tracking-tight text-transparent">
+                WIKI.HS</h1>
+              <p class="mx-auto mt-4 max-w-md text-[16px] leading-relaxed text-slate-400">
+                给一群人用的知识库网站<br>把群规、教程、反复被问的问题写下来，谁都能查</p>
+
+              <a href="/download/WIKI.HS.zip"
+                 class="group mt-9 inline-flex items-center justify-center gap-3 rounded-full
+                        border border-white/15 bg-gradient-to-r from-emerald-700 via-emerald-600
+                        to-sky-700 px-14 py-5 text-[17.5px] font-bold text-white
+                        shadow-[0_6px_26px_rgba(44,110,91,.42)]
+                        transition duration-200 hover:-translate-y-0.5 hover:scale-[1.025]
+                        hover:shadow-[0_14px_44px_rgba(95,199,158,.55)]">
+                {dl_icon}<span>下载 WIKI.HS.zip</span></a>
+
+              <div class="mt-5 flex flex-wrap justify-center gap-4 text-[12.5px] text-slate-500">
+                <span>版本 1.3</span><span>{size:.0f} KB</span>
+                <span>MD5 <code class="rounded bg-white/[0.07] px-2 py-0.5 text-slate-400">
+                  {md5[:16] if md5 else "-"}</code></span>
+              </div>
+            </div>
+
+            <div class="mt-5 grid gap-4">
+              <div class="rounded-[18px] border border-white/10 bg-white/[0.045] px-6 py-6
+                   shadow-xl backdrop-blur-xl">
+                <h2 class="mb-3.5 flex items-center gap-2.5 text-sm font-semibold text-slate-200">
+                  <span class="grid h-7 w-7 place-items-center rounded-lg border
+                        border-emerald-400/20 bg-emerald-400/10 text-[13px]">⚡</span>一键部署</h2>
+                <p class="text-[13.5px] leading-relaxed text-slate-400">
+                  Linux 服务器，约 1 分钟装完，自动注册 systemd 服务、开机自启。</p>
+                <code class="mt-3 block overflow-x-auto whitespace-nowrap rounded-xl
+                      border border-white/[0.07] bg-black/40 px-4 py-3
+                      font-mono text-[13px] text-emerald-300">sudo bash deploy.sh</code>
+              </div>
+
+              <div class="rounded-[18px] border border-white/10 bg-white/[0.045] px-6 py-6
+                   shadow-xl backdrop-blur-xl">
+                <h2 class="mb-3.5 flex items-center gap-2.5 text-sm font-semibold text-slate-200">
+                  <span class="grid h-7 w-7 place-items-center rounded-lg border
+                        border-emerald-400/20 bg-emerald-400/10 text-[13px]">🧩</span>装进现有机器人</h2>
+                <ul class="space-y-1.5 text-[13.5px] leading-relaxed text-slate-400">
+                  <li>解压，把 WIKI.HS 里所有文件放进 src/plugins/wiki/</li>
+                  <li>重启机器人，看日志打印的地址和口令</li>
+                  <li>打开 /register 注册第一个账号 → 自动成为站长</li>
+                </ul>
+              </div>
+
+              <div class="rounded-[18px] border border-white/10 bg-white/[0.045] px-6 py-6
+                   shadow-xl backdrop-blur-xl">
+                <h2 class="mb-3.5 flex items-center gap-2.5 text-sm font-semibold text-slate-200">
+                  <span class="grid h-7 w-7 place-items-center rounded-lg border
+                        border-emerald-400/20 bg-emerald-400/10 text-[13px]">✨</span>包含什么</h2>
+                <ul class="space-y-1.5 text-[13.5px] leading-relaxed text-slate-400">
+                  <li>服务端渲染 WIKI，零前端依赖、断网可用</li>
+                  <li>后台：仪表盘 / 服务器负载 / 媒体库 / 词条管理 / Cookie 分发 / 邮件</li>
+                  <li>账号体系：注册 + 邮箱验证码 + 人机验证，三级权限</li>
+                  <li>图片上传（5MB 上限，按文件头校验类型）</li>
+                  <li>删除有回收站，误删可恢复</li>
+                  <li>操作日志、账号安全页、隐私说明</li>
+                </ul>
+              </div>
+            </div>
+
+            <p class="mt-9 text-center text-[12.5px] leading-relaxed text-slate-600">
+              用爱发电 · 觉得有用的话，转给需要的朋友就够了<br>
+              <a href="/" class="text-emerald-400 no-underline hover:underline">返回首页</a></p>
+          </div>
+        </div>"""
+        html = _layout("下载", tw)
+        html = html.replace("</head>", """
+        <style>.layout{display:block}.side{display:none}.main{padding:0;max-width:none}
+        .foot{display:none}body{background:#08090c;color:#e8eaed}</style></head>""", 1)
+        return HTMLResponse(html)
+
     inner = f"""
-    <div style="max-width:640px;margin:34px auto">
-      <div style="text-align:center">
-        <h1 style="font-size:30px;margin-bottom:6px">📦 WIKI.HS</h1>
-        <p style="color:var(--sub);margin:0 0 6px">星海百科 · 群知识库网站</p>
-        <p style="color:var(--accent);font-weight:600;font-size:15px">
-          🎁 公益免费 · 可自由使用与二创</p>
-        <div style="margin:22px 0 8px">
-          <a href="/download/WIKI.HS.zip"
-             style="display:inline-block;padding:16px 46px;background:var(--accent);
-                    color:#fff;font-size:18px;font-weight:600;border-radius:12px;
-                    text-decoration:none;box-shadow:0 4px 14px rgba(47,111,79,.28)">
-            ⬇ 下载 WIKI.HS.zip</a>
+    {css}
+    <div class="dl-wrap">
+      <div class="glass hero">
+        <div class="eyebrow">公益免费 · MIT 许可</div>
+        <h1>WIKI.HS</h1>
+        <p class="tagline">给一群人用的知识库网站<br>把群规、教程、反复被问的问题写下来，谁都能查</p>
+        <a class="dl-btn" href="/download/WIKI.HS.zip">{dl_icon}
+          <span>下载 WIKI.HS.zip</span></a>
+        <div class="dl-meta">
+          <span>版本 1.3</span>
+          <span>{size:.0f} KB</span>
+          <span>MD5 <code>{md5[:16] if md5 else "-"}</code></span>
         </div>
-        <p style="color:var(--sub);font-size:12.5px">
-          {size:.0f} KB　版本 1.1　MD5：<code>{md5}</code></p>
       </div>
 
-      <div style="{box}">
-        <b>🚀 一键部署（Linux 服务器）</b><br>
-        <code>sudo bash deploy.sh</code>　约 1 分钟装完，自动开机自启<br>
-        <span style="color:var(--sub)">可选参数：--port 9000 / --domain wiki.xxx.com（自动 HTTPS）</span>
+      <div class="cards">
+        <div class="glass card-dl">
+          <h2><span class="ico">⚡</span>一键部署</h2>
+          <p>Linux 服务器，约 1 分钟装完，自动注册 systemd 服务、开机自启。</p>
+          <span class="cmd">sudo bash deploy.sh</span>
+        </div>
+
+        <div class="glass card-dl">
+          <h2><span class="ico">🧩</span>装进现有机器人</h2>
+          <ul>
+            <li>解压，把 <code>WIKI.HS</code> 里所有文件放进 <code>src/plugins/wiki/</code></li>
+            <li>重启机器人，看日志打印的地址和口令</li>
+            <li>打开 <code>/register</code> 注册第一个账号 → 自动成为站长</li>
+          </ul>
+        </div>
+
+        <div class="glass card-dl">
+          <h2><span class="ico">✨</span>包含什么</h2>
+          <ul>
+            <li>服务端渲染 WIKI，零前端依赖、断网可用</li>
+            <li>后台：仪表盘 / 服务器负载 / 媒体库 / 词条管理 / Cookie 分发 / 邮件</li>
+            <li>账号体系：注册 + 邮箱验证码 + 人机验证，三级权限</li>
+            <li>图片上传（5MB 上限，按文件头校验类型）</li>
+            <li>删除有回收站，误删可恢复</li>
+            <li>操作日志、账号安全页、隐私说明</li>
+          </ul>
+        </div>
       </div>
 
-      <div style="{box}">
-        <b>🧩 装进现有机器人</b><br>
-        1. 解压，把 <code>WIKI.HS</code> 里所有文件放进 <code>机器人/src/plugins/wiki/</code><br>
-        2. 重启机器人，看日志打印的地址和口令<br>
-        3. 打开 <code>/register</code> 注册第一个账号 → 自动成为站长
-      </div>
-
-      <div style="{box}">
-        <b>✨ 包含什么</b><br>
-        · 服务端渲染 WIKI，零前端依赖、断网可用<br>
-        · 后台：仪表盘 / 服务器负载 / 媒体库 / 词条管理 / Cookie 分发 / 邮件<br>
-        · 账号体系：注册 + 邮箱验证码 + 人机验证，三级权限<br>
-        · 图片上传（5MB 上限，校验文件头）<br>
-        · 删除有回收站，误删可恢复
-      </div>
-
-      <div style="text-align:center;color:var(--sub);font-size:12.5px;margin-top:22px">
-        用爱发电 · 如果帮到你了，留个 Star 或转给需要的朋友就够啦 💚
+      <div class="foot-dl">
+        用爱发电 · 觉得有用的话，转给需要的朋友就够了<br>
+        <a href="/">返回首页</a>
       </div>
     </div>"""
-    return HTMLResponse(_layout("下载", inner))
+
+    html = _layout("下载", inner)
+    # 下载页用独立深色主题，覆盖全局配色与侧栏
+    override = """
+    <style>
+    .layout{display:block}
+    .side{display:none}
+    .main{padding:0;max-width:none}
+    .foot{display:none}
+    </style>"""
+    html = html.replace("</head>", override + "</head>", 1)
+    html = html.replace('<body>', '<body class="dl-page">', 1)
+    return HTMLResponse(html)
 
 
 @app.get("/health", response_class=JSONResponse)
@@ -3547,9 +3931,9 @@ async def route_account_kickall(csrf: str = Form("")):
     return RedirectResponse("/account", status_code=303)
 
 
-@app.post("/comment", response_class=HTMLResponse)
-async def route_comment(page: str = Form(""), body: str = Form(""),
-                        csrf: str = Form("")):
+@app.post("/qa", response_class=HTMLResponse)
+async def route_qa_ask(page: str = Form(""), question: str = Form(""),
+                       csrf: str = Form("")):
     blocked = _csrf_guard(csrf)
     if blocked:
         return blocked
@@ -3558,24 +3942,39 @@ async def route_comment(page: str = Form(""), body: str = Form(""),
         return RedirectResponse("/login", status_code=303)
     if not (load_pages().get("pages") or {}).get(page):
         return RedirectResponse("/", status_code=303)
-    ok, msg = add_comment(page, body, user)
+    ok, msg = ask_question(page, question, user)
     if ok:
-        audit("发表评论", page, body[:60])
-    return RedirectResponse("/p/" + quote(page) + "#comments", status_code=303)
+        audit("提问", page, question[:60])
+    return RedirectResponse("/p/" + quote(page) + "#qa", status_code=303)
 
 
-@app.post("/comment/delete", response_class=HTMLResponse)
-async def route_comment_delete(page: str = Form(""), cid: str = Form(""),
-                               csrf: str = Form("")):
+@app.post("/qa/answer", response_class=HTMLResponse)
+async def route_qa_answer(page: str = Form(""), qid: str = Form(""),
+                          answer: str = Form(""), csrf: str = Form("")):
     blocked = _csrf_guard(csrf)
     if blocked:
         return blocked
     user = CUR_USER["v"]
     if not user:
         return RedirectResponse("/login", status_code=303)
-    if delete_comment(page, cid, user):
-        audit("删除评论", page)
-    return RedirectResponse("/p/" + quote(page) + "#comments", status_code=303)
+    ok, _msg = answer_question(page, qid, answer, user)
+    if ok:
+        audit("回答问题", page, answer[:60])
+    return RedirectResponse("/p/" + quote(page) + "#qa", status_code=303)
+
+
+@app.post("/qa/delete", response_class=HTMLResponse)
+async def route_qa_delete(page: str = Form(""), qid: str = Form(""),
+                          csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    user = CUR_USER["v"]
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    if delete_question(page, qid, user):
+        audit("删除问答", page)
+    return RedirectResponse("/p/" + quote(page) + "#qa", status_code=303)
 
 
 @app.get("/privacy", response_class=HTMLResponse)

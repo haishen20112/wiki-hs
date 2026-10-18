@@ -37,6 +37,17 @@ sudo bash deploy.sh --uninstall                  # 停止服务，数据备份�
 
 也可以放进机器人的 `src/plugins/wiki/` 目录当插件用，重启即可。
 
+## 界面模式
+
+`wiki_data/config.json` 里的 `ui_mode` 可以选两套：
+
+| 模式 | 说明 | 适用 |
+| --- | --- | --- |
+| `lite`（默认） | 纯内联 CSS，零外部请求，断网可用，CSP 最严 | 内网、轻量部署 |
+| `standard` | 引入 Tailwind CSS（CDN），视觉更现代 | 有公网、追求观感 |
+
+改完重启生效。页脚会显示当前模式，方便确认。
+
 ## 配置
 
 `wiki_data/config.json`：
