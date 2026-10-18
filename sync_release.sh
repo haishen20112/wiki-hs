@@ -33,6 +33,9 @@ STAGE="$REPO_DIR/.release/WIKI.HS"
 rm -rf "$REPO_DIR/.release"
 mkdir -p "$STAGE/wiki_data/uploads"
 cp wiki.py deploy.sh "$STAGE/"
+# 文档一起打包，买家解压就能看
+cp README.md README.en.md CHANGELOG.md LICENSE "$STAGE/" 2>/dev/null || true
+cp *.bat "$STAGE/" 2>/dev/null || true
 cp wiki_data/pages.json wiki_data/favicon.svg "$STAGE/wiki_data/"
 touch "$STAGE/wiki_data/uploads/.gitkeep"
 

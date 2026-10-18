@@ -3820,7 +3820,7 @@ async def route_download_page() -> HTMLResponse:
                 {dl_icon}<span>下载 WIKI.HS.zip</span></a>
 
               <div class="mt-5 flex flex-wrap justify-center gap-4 text-[12.5px] text-slate-500">
-                <span>版本 1.3</span><span>{size:.0f} KB</span>
+                <span>版本 1.21</span><span>{size:.0f} KB</span>
                 <span>MD5 <code class="rounded bg-white/[0.07] px-2 py-0.5 text-slate-400">
                   {md5[:16] if md5 else "-"}</code></span>
               </div>
@@ -3888,7 +3888,7 @@ async def route_download_page() -> HTMLResponse:
         <a class="dl-btn" href="/download/WIKI.HS.zip">{dl_icon}
           <span>下载 WIKI.HS.zip</span></a>
         <div class="dl-meta">
-          <span>版本 1.3</span>
+          <span>版本 1.21</span>
           <span>{size:.0f} KB</span>
           <span>MD5 <code>{md5[:16] if md5 else "-"}</code></span>
         </div>
@@ -4981,7 +4981,38 @@ def seed_if_empty() -> None:
 # 启动
 # ============================================================
 
-driver = get_driver()
+# 判断运行环境：
+#   * 作为 NoneBot 插件被加载 → 用真 driver
+#   * 直接 python wiki.py 运行 → 独立模式，不需要 NoneBot
+#   * --local → 本地桌面版，同样独立
+def _has_nonebot_runtime() -> bool:
+    try:
+        import nonebot
+        nonebot.get_driver()
+        return True
+    except Exception:
+        return False
+
+
+_IS_PLUGIN = _has_nonebot_runtime() and not is_local_mode()
+_STANDALONE = not _IS_PLUGIN
+
+
+class _NoopDriver:
+    """独立运行时的占位 driver"""
+
+    def __init__(self):
+        self._startup = []
+
+    def on_startup(self, fn):
+        self._startup.append(fn)
+        return fn
+
+
+if _IS_PLUGIN:
+    driver = get_driver()
+else:
+    driver = _NoopDriver()
 
 
 @driver.on_startup
@@ -5013,6 +5044,35 @@ async def _wiki_startup() -> None:
 # ============================================================
 # 独立运行入口（下载者本地用）
 # ============================================================
+
+def run_standalone(port: int = 0) -> None:
+    """独立运行服务器版（不需要 NoneBot）"""
+    import asyncio
+
+    global CONFIG, EDIT_TOKEN
+    CONFIG = load_config()
+    EDIT_TOKEN = str(CONFIG.get("token") or "")
+    seed_if_empty()
+    tighten_perms()
+
+    use_port = port or int(CONFIG.get("port") or WEB_PORT)
+    url = f"http://127.0.0.1:{use_port}"
+    print("=" * 60)
+    print("  星海百科 · 服务器版")
+    print("=" * 60)
+    print(f"  地址：{url}")
+    print(f"  后台：{url}/login?token={EDIT_TOKEN}")
+    print(f"  数据：{DATA_DIR}")
+    print("  按 Ctrl+C 停止")
+    print("=" * 60)
+
+    async def _serve() -> None:
+        cfg = uvicorn.Config(app, host=WEB_HOST, port=use_port, log_level="info")
+        await uvicorn.Server(cfg).serve()
+
+    asyncio.run(_serve())
+
+
 def run_local(port: int = 8080, open_browser: bool = True) -> None:
     """本地桌面版：只监听 127.0.0.1，不对外暴露"""
     import asyncio
@@ -5054,8 +5114,13 @@ def _cli() -> None:
     import sys
     args = sys.argv[1:]
     if not args:
+        # 无参数 = 启动服务器版（独立运行，不需要 NoneBot）
+        run_standalone()
+        return
+    if "--help" in args or "-h" in args:
         print("用法：")
-        print("  python wiki.py --local              启动本地编辑台（推荐）")
+        print("  python wiki.py                      启动服务器版（默认端口 8081）")
+        print("  python wiki.py --local              启动本地编辑台（推荐新手）")
         print("  python wiki.py --local --port 8080  指定端口")
         print("  python wiki.py --export 输出目录     只导出静态站")
         return
