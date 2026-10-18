@@ -1,24 +1,37 @@
 @echo off
-chcp 65001 >nul
-title æ˜Ÿæµ·ç™¾ç§‘ - æœåŠ¡å™¨ç‰ˆ
+chcp 936 >nul 2>nul
+title ĞÇº£°Ù¿Æ - ·şÎñÆ÷°æ
 cd /d "%~dp0"
-
 echo ============================================================
-echo   æ˜Ÿæµ·ç™¾ç§‘ - æœåŠ¡å™¨ç‰ˆ
-echo ============================================================
-echo.
-echo   å¯åŠ¨åä¸è¦å…³é—­è¿™ä¸ªçª—å£ï¼Œå…³äº†ç½‘ç«™å°±åœäº†ã€‚
-echo   é»˜è®¤ç«¯å£ 8081ï¼Œæµè§ˆå™¨è®¿é—® http://127.0.0.1:8081
-echo.
+echo   ĞÇº£°Ù¿Æ - ·şÎñÆ÷°æ
 echo ============================================================
 echo.
-
+echo   Æô¶¯ºó²»Òª¹Ø±ÕÕâ¸ö´°¿Ú£¬¹ØÁËÍøÕ¾¾ÍÍ£ÁË¡£
+echo   Ä¬ÈÏµØÖ·: http://127.0.0.1:8081
+echo.
+echo ============================================================
+echo.
+where python >nul 2>nul
+if errorlevel 1 goto nopython
 python wiki.py
-
+if errorlevel 1 goto failed
+goto end
+:nopython
+echo.
+echo [´íÎó] Ã»ÓĞÕÒµ½ Python
+echo.
+echo ÇëÏÈ°²×° Python 3.10 »ò¸üĞÂ°æ±¾
+echo ÏÂÔØµØÖ·: https://www.python.org/downloads/
+echo °²×°Ê±Îñ±Ø¹´Ñ¡ Add Python to PATH
+echo.
+goto end
+:failed
 echo.
 echo ------------------------------------------------------------
-echo   ç¨‹åºå·²é€€å‡ºã€‚
-echo   å¦‚æœå¯åŠ¨å¤±è´¥ï¼Œè¯·å…ˆæ‰§è¡Œï¼š
+echo   Æô¶¯Ê§°Ü
+echo   ÇëÏÈ°²×°ÒÀÀµ£¬ÔÚÕâ¸ö´°¿ÚÖ´ĞĞ:
 echo       pip install fastapi uvicorn python-multipart
 echo ------------------------------------------------------------
+echo.
+:end
 pause
