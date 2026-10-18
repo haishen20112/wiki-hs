@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import hmac
 import html
@@ -359,8 +360,33 @@ def md_inline(text: str) -> str:
     return s
 
 
-def md_to_html(body: str) -> str:
-    """把正文渲染成 HTML（先转义，只放行我们自己生成的标签，避免 XSS）"""
+_TOC_STATE: Dict[str, Any] = {"seen": {}, "items": []}
+
+
+def _slug(text: str) -> str:
+    """标题转 URL 友好锚点：保留中英文数字，其余转连字符"""
+    raw = re.sub(r"<[^>]+>", "", str(text or ""))
+    raw = re.sub(r"[`*_~]", "", raw).strip().lower()
+    slug = re.sub(r"[^\w\u4e00-\u9fa5]+", "-", raw).strip("-")
+    return slug or "section"
+
+
+def _unique_anchor(title: str) -> str:
+    """同页重复标题自动加序号，保证锚点唯一"""
+    seen = _TOC_STATE["seen"]
+    base = _slug(title)
+    n = seen.get(base, 0)
+    seen[base] = n + 1
+    return base if n == 0 else f"{base}-{n}"
+
+
+def md_to_html(body: str, collect_toc: bool = False):
+    """把正文渲染成 HTML（先转义，只放行我们自己生成的标签，避免 XSS）
+
+    collect_toc=True 时返回 (html, toc)，toc 是 [(level, title, anchor), ...]
+    """
+    _TOC_STATE["seen"] = {}
+    _TOC_STATE["items"] = []
     lines = str(body or "").replace("\r\n", "\n").split("\n")
     out: List[str] = []
     in_code = False
@@ -405,7 +431,10 @@ def md_to_html(body: str) -> str:
             flush_para()
             close_lists()
             level = len(m.group(1)) + 1
-            out.append(f"<h{level} id='s{len(out)}'>{md_inline(m.group(2))}</h{level}>")
+            raw_title = m.group(2)
+            anchor = _unique_anchor(raw_title)
+            _TOC_STATE["items"].append((level, raw_title, anchor))
+            out.append(f'<h{level} id="{anchor}">{md_inline(raw_title)}</h{level}>')
             continue
 
         m = re.match(r"^\s*==\s*(.+?)\s*==\s*$", line)
@@ -461,7 +490,10 @@ def md_to_html(body: str) -> str:
     close_lists()
     if in_code:
         out.append("</code></pre>")
-    return "\n".join(out)
+    html_out = "\n".join(out)
+    if collect_toc:
+        return html_out, list(_TOC_STATE["items"])
+    return html_out
 
 
 # ============================================================
@@ -772,7 +804,96 @@ h1{
   font-family:inherit;resize:vertical;outline:none;line-height:1.6;
 }
 .qa-ask textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-/* 表格在窄屏可横向滚动 */
+
+/* ── 目录导航 ── */
+.toc{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px 18px;margin:0 0 26px;box-shadow:var(--shadow);
+}
+.toc-h{
+  font-size:12px;color:var(--faint);letter-spacing:1.2px;text-transform:uppercase;
+  font-weight:600;margin-bottom:9px;
+}
+.toc-item{
+  display:block;padding:5px 0 5px 12px;font-size:13.5px;color:var(--ink2);
+  border-left:2px solid var(--line);transition:all .15s;line-height:1.6;
+}
+.toc-item:hover{
+  color:var(--accent);border-left-color:var(--accent);text-decoration:none;
+  padding-left:15px;
+}
+
+/* ── 反向链接 ── */
+.backlinks{
+  margin-top:28px;padding:16px 18px;background:var(--panel2);
+  border:1px solid var(--line);border-radius:var(--radius);
+}
+.bl-h{
+  font-size:12px;color:var(--faint);letter-spacing:.8px;margin-bottom:10px;
+  text-transform:uppercase;font-weight:600;
+}
+.bl-item{
+  display:inline-block;margin:0 8px 8px 0;padding:5px 12px;
+  background:var(--panel);border:1px solid var(--line);border-radius:20px;
+  font-size:13px;color:var(--accent2);transition:all .15s;
+}
+.bl-item:hover{
+  background:var(--accent2);color:#fff;border-color:var(--accent2);
+  text-decoration:none;transform:translateY(-1px);
+}
+
+
+/* ── 历史 diff ── */
+.hist-item{
+  border:1px solid var(--line);border-radius:10px;margin-bottom:10px;
+  background:var(--panel);overflow:hidden;
+}
+.hist-item>summary{
+  cursor:pointer;padding:11px 15px;font-size:13px;color:var(--sub);
+  list-style:none;transition:background .15s;
+}
+.hist-item>summary::-webkit-details-marker{display:none}
+.hist-item>summary:hover{background:var(--soft)}
+.hist-item[open]>summary{border-bottom:1px solid var(--line);color:var(--ink)}
+.d-add,.d-del,.d-skip{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12.5px;line-height:1.7;padding:2px 15px;white-space:pre-wrap;
+  word-break:break-word;
+}
+.d-add{background:rgba(44,110,91,.09);color:var(--accent-ink)}
+.d-del{background:rgba(184,73,60,.09);color:var(--bad)}
+.d-skip{color:var(--faint);font-style:italic;padding:5px 15px}
+.hist-item .mini{margin:9px 15px 12px}
+
+
+/* ── 编辑预览 ── */
+.edit-tabs{display:flex;gap:4px;margin:6px 0 8px}
+.etab{
+  padding:6px 16px;border:1px solid var(--line);background:var(--panel);
+  color:var(--sub);font-size:13px;border-radius:8px;cursor:pointer;
+  font-family:inherit;transition:all .15s;
+}
+.etab:hover{border-color:var(--accent);color:var(--accent)}
+.etab.on{background:var(--accent-soft);color:var(--accent-ink);
+  border-color:var(--accent);font-weight:600}
+.preview-pane{
+  min-height:380px;padding:18px 22px;border:1px solid var(--line);
+  border-radius:10px;background:var(--panel);overflow:auto;
+}
+
+
+/* ── 搜索结果 ── */
+.hits{display:flex;flex-direction:column;gap:2px}
+.hit{padding:14px 16px;border-bottom:1px solid var(--line);
+  border-radius:8px;transition:background .12s}
+.hit:hover{background:var(--panel2)}
+.hit-t{font-size:16.5px;font-weight:650;color:var(--ink);display:block}
+.hit-t:hover{color:var(--accent);text-decoration:none}
+.hit-b{margin-top:5px;font-size:13.5px;color:var(--sub);line-height:1.75}
+mark{background:var(--accent-soft);color:var(--accent-ink);
+  padding:1px 3px;border-radius:3px;font-weight:600}
+
+/* ── 表格在窄屏可横向滚动 ── */
 .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:6px}
 .table-wrap table{min-width:560px}
 
@@ -1199,6 +1320,45 @@ def _qa_block(name: str) -> str:
 
 
 
+
+
+def render_toc(toc) -> str:
+    """把标题列表渲染成目录卡片；少于 2 个标题就不显示"""
+    if not toc or len(toc) < 2:
+        return ""
+    items = ""
+    for level, title, anchor in toc:
+        indent = max(0, level - 2) * 14
+        items += (f'<a class="toc-item" style="padding-left:{12 + indent}px" '
+                  f'href="#{anchor}">{_esc(title)}</a>')
+    return f'<nav class="toc"><div class="toc-h">本页目录</div>{items}</nav>'
+
+
+def page_backlinks(name: str) -> List[str]:
+    """找出所有提到该词条的其他词条（反向链接）"""
+    pages = load_pages().get("pages") or {}
+    out = []
+    target = name.strip()
+    for other, page in pages.items():
+        if other == target:
+            continue
+        body = str(page.get("body") or "")
+        tags = " ".join(page.get("tags") or [])
+        if target in body or target in tags:
+            out.append(other)
+    return sorted(out)
+
+
+def render_backlinks(name: str) -> str:
+    """反向链接区块：哪些词条提到了本页"""
+    links = page_backlinks(name)
+    if not links:
+        return ""
+    items = "".join(f'<a class="bl-item" href="/p/{quote(n)}">{_esc(n)}</a>'
+                      for n in links[:30])
+    return (f'<div class="backlinks"><div class="bl-h">'
+            f'提到本词条的内容（{len(links)}）</div>{items}</div>')
+
 def view_page(name: str) -> str:
     data = load_pages()
     page = (data.get("pages") or {}).get(name)
@@ -1210,7 +1370,9 @@ def view_page(name: str) -> str:
     tags = "".join(f'<a class="tag" href="/tag/{quote(t)}">{_esc(t)}</a>'
                    for t in (page.get("tags") or []))
     updated = datetime.fromtimestamp(float(page.get("updated", _now()))).strftime("%Y-%m-%d %H:%M")
-    body_html = md_to_html(page.get("body") or "")
+    body_html, toc = md_to_html(page.get("body") or "", collect_toc=True)
+    toc_html = render_toc(toc)
+    backlinks_html = render_backlinks(name)
     edit_btn = (f'<a class="btn" href="/edit/{quote(name)}">编辑</a>'
                 f'<a class="btn" href="/history/{quote(name)}">历史</a>')
     # 有编辑权限的人可以在详情页直接删除（带二次确认）
@@ -1223,7 +1385,9 @@ def view_page(name: str) -> str:
     inner = (f'<h1>{_esc(name)}</h1>'
              f'<div class="meta"><span>🕒 {updated}</span>'
              f'<span>✏️ {int(page.get("edits", 0))} 次编辑</span>{tags}</div>'
+             f'{toc_html}'
              f'<article class="article">{body_html or "<p style=color:var(--sub)>（还没有正文）</p>"}</article>'
+             f'{backlinks_html}'
              f'<div class="actions" style="margin-top:30px">{edit_btn}</div>'
              f'{_qa_block(name)}')
     return _layout(name, inner, crumb=f'<a href="/">首页</a> / {_esc(name)}')
@@ -1237,6 +1401,40 @@ def view_all() -> str:
              f'<div class="cards">{cards or "<div class=empty>暂无词条</div>"}</div>')
     return _layout("全部词条", inner, "all")
 
+
+
+def _snippet(body: str, q: str, width: int = 90) -> str:
+    """截取命中关键词前后的一段文字，命中处高亮"""
+    text = re.sub(r"\s+", " ", str(body or ""))
+    text = re.sub(r"^\s*#{1,6}\s*", "", text, flags=re.M)
+    if not q:
+        return _esc(text[:width * 2])
+    low = text.lower()
+    pos = low.find(q.lower())
+    if pos < 0:
+        return _esc(text[:width * 2])
+    start = max(0, pos - width // 2)
+    end = min(len(text), pos + len(q) + width)
+    frag = text[start:end]
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(text) else ""
+    return prefix + _highlight(frag, q) + suffix
+
+
+def _highlight(text: str, q: str) -> str:
+    """把文本里的关键词包成 <mark>（先转义再标记，防 XSS）"""
+    safe = _esc(text)
+    if not q:
+        return safe
+    q_esc = _esc(q)
+    if not q_esc:
+        return safe
+    # 大小写不敏感替换，用正则转义关键词
+    try:
+        pattern = re.compile(re.escape(q_esc), re.IGNORECASE)
+        return pattern.sub(lambda m: f"<mark>{m.group(0)}</mark>", safe)
+    except Exception:
+        return safe
 
 def view_search(q: str) -> str:
     q = (q or "").strip()
@@ -1253,10 +1451,16 @@ def view_search(q: str) -> str:
             if score:
                 hits.append((score, n, p))  # type: ignore[arg-type]
         hits.sort(key=lambda x: -x[0])      # type: ignore[index]
-    cards = "".join(page_card(n, p) for _, n, p in hits)  # type: ignore[misc]
+    # 带命中片段的搜索结果
+    rows = ""
+    for _, n, p in hits[:40]:
+        body = str(p.get("body") or "")
+        snippet = _snippet(body, q)
+        rows += (f'<div class="hit"><a class="hit-t" href="/p/{quote(n)}">{_highlight(n, q)}</a>'
+                 f'<div class="hit-b">{snippet}</div></div>')
     inner = (f'<h1>搜索：{_esc(q)}</h1>'
              f'<div class="meta"><span>命中 {len(hits)} 个词条</span></div>'
-             + (f'<div class="cards">{cards}</div>' if hits else
+             + (f'<div class="hits">{rows}</div>' if hits else
                 '<div class="empty">没有找到相关词条。'
                 f'<a href="/new?title={quote(q)}">创建一个？</a></div>'))
     return _layout("搜索", inner, crumb=f'搜索 / {_esc(q)}')
@@ -1339,7 +1543,12 @@ def view_edit(name: str) -> str:
       <label>标签（英文逗号分隔）</label>
       <input type="text" name="tags" value="{_esc(','.join(page.get('tags') or []))}">
       <label>正文</label>
-      <textarea name="body" required>{_esc(page.get('body') or '')}</textarea>
+      <div class="edit-tabs">
+        <button type="button" class="etab on" data-tab="write">编写</button>
+        <button type="button" class="etab" data-tab="preview">预览</button>
+      </div>
+      <textarea name="body" id="body" required>{_esc(page.get('body') or '')}</textarea>
+      <div id="preview-pane" class="article preview-pane" style="display:none"></div>
 
       {EDITOR_JS}
       <div class="actions">
@@ -1350,21 +1559,70 @@ def view_edit(name: str) -> str:
     return _layout("编辑", inner, crumb=f'<a href="/p/{quote(name)}">{_esc(name)}</a> / 编辑')
 
 
+
+def render_diff(old: str, new: str, max_lines: int = 120) -> str:
+    """行级 diff：绿色新增、红色删除（标准库 difflib，零依赖）"""
+    old_lines = str(old or "").splitlines()
+    new_lines = str(new or "").splitlines()
+    sm = difflib.SequenceMatcher(None, old_lines, new_lines)
+    out = []
+    shown = 0
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            # 相同段落折叠，只提示跳过了多少行
+            n = i2 - i1
+            if n > 4:
+                out.append(f'<div class="d-skip">… 省略 {n - 2} 行未改动 …</div>')
+            continue
+        if tag in ("replace", "delete"):
+            for ln in old_lines[i1:i2]:
+                if shown >= max_lines:
+                    out.append('<div class="d-skip">… 内容过多，已截断 …</div>')
+                    return "".join(out)
+                out.append(f'<div class="d-del">- {_esc(ln)}</div>')
+                shown += 1
+        if tag in ("replace", "insert"):
+            for ln in new_lines[j1:j2]:
+                if shown >= max_lines:
+                    out.append('<div class="d-skip">… 内容过多，已截断 …</div>')
+                    return "".join(out)
+                out.append(f'<div class="d-add">+ {_esc(ln)}</div>')
+                shown += 1
+    if not out:
+        return '<div class="d-skip">（与下一版内容相同）</div>'
+    return "".join(out)
+
 def view_history(name: str) -> str:
     data = load_pages()
     page = (data.get("pages") or {}).get(name)
     if not page:
         return view_page(name)
     rows = page.get("history") or []
-    body = "".join(
-        f'<div class="row">#{len(rows) - i}　'
-        f'{datetime.fromtimestamp(float(h.get("time", 0))).strftime("%Y-%m-%d %H:%M")}'
-        f'　{h.get("by", "")}　（{len(str(h.get("body") or ""))} 字符）'
-        f'<pre style="white-space:pre-wrap;color:var(--sub);font-size:12.5px;margin:6px 0 0">'
-        f'{_esc(str(h.get("body") or "")[:600])}</pre></div>'
-        for i, h in enumerate(rows[-10:]))
+    current = str(page.get("body") or "")
+    can_revert = can_edit(CUR_USER["v"])
+    # 逐版对比：最新一版 vs 当前正文，更早的 vs 后一版
+    items = []
+    for i, h in enumerate(rows):
+        nxt = rows[i + 1] if i + 1 < len(rows) else None
+        older = str(h.get("body") or "")
+        newer = str(nxt.get("body") or "") if nxt else current
+        diff_html = render_diff(older, newer)
+        ts = datetime.fromtimestamp(float(h.get("time", 0))).strftime("%Y-%m-%d %H:%M")
+        revert = ""
+        if can_revert:
+            revert = (f'<form method="post" action="/history/{quote(name)}/restore" '
+                      f'style="display:inline">{{CSRF_FIELD}}'
+                      f'<input type="hidden" name="index" value="{i}">'
+                      f'<button class="mini ok" type="submit">恢复此版本</button></form>')
+        items.append(
+            f'<details class="hist-item">'
+            f'<summary>#{len(rows) - i}　{ts}　{_esc(h.get("by", ""))}'
+            f'　（{len(older)} 字符）</summary>'
+            f'{diff_html}{revert}</details>')
+    body = "".join(items)
     inner = (f'<h1>历史：{_esc(name)}</h1>'
-             f'<div class="meta"><span>共 {len(rows)} 个历史版本（显示最近 10 个）</span></div>'
+             f'<div class="meta"><span>共 {len(rows)} 个历史版本</span>'
+             f'<span>绿色为新增，红色为删除</span></div>'
              f'<div class="hist">{body or "<div class=empty>还没有历史版本</div>"}</div>'
              f'<div class="actions"><a class="btn" href="/p/{quote(name)}">返回词条</a></div>')
     return _layout("历史", inner, crumb=f'<a href="/p/{quote(name)}">{_esc(name)}</a> / 历史')
@@ -1398,6 +1656,50 @@ MEDIA_INDEX = DATA_DIR / "media.json"
 
 
 EDITOR_JS = """
+<script>
+(function () {
+  // 编写 / 预览 切换
+  var tabs = document.querySelectorAll('.etab');
+  var pane = document.getElementById('preview-pane');
+  var ta = document.getElementById('body');
+  if (!tabs.length || !pane || !ta) return;
+  var timer = null;
+
+  function renderPreview() {
+    fetch('/api/preview', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({body: ta.value})
+    }).then(function (r) { return r.json(); })
+      .then(function (j) {
+        pane.innerHTML = j.ok ? j.html : '<p style="color:var(--bad)">预览失败：' + (j.error || '') + '</p>';
+      })
+      .catch(function () { pane.innerHTML = '<p style="color:var(--bad)">预览服务不可用</p>'; });
+  }
+
+  tabs.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var target = btn.dataset.tab;
+      tabs.forEach(function (b) { b.classList.toggle('on', b === btn); });
+      if (target === 'preview') {
+        ta.style.display = 'none';
+        pane.style.display = 'block';
+        renderPreview();
+      } else {
+        ta.style.display = '';
+        pane.style.display = 'none';
+      }
+    });
+  });
+
+  // 输入停顿 600ms 后自动刷新预览（只在预览模式）
+  ta.addEventListener('input', function () {
+    if (pane.style.display === 'none') return;
+    clearTimeout(timer);
+    timer = setTimeout(renderPreview, 600);
+  });
+})();
+</script>
 <script>
 (function() {
   const ib = document.getElementById('imgbtn');
@@ -3566,8 +3868,9 @@ async def route_edit_post(name: str, tags: str = Form(""),
     old = str(page.get("body") or "")
     if old:
         page.setdefault("history", []).append(
-            {"time": _now(), "by": "web", "body": old[:4000]})
-        page["history"] = page["history"][-20:]
+            {"time": _now(), "by": (CUR_USER["v"] or {}).get("username", "web"),
+             "body": old})
+        page["history"] = page["history"][-50:]
     page["body"] = (body or "")[:MAX_BODY]
     page["tags"] = [t.strip() for t in re.split(r"[,，\s]+", tags or "") if t.strip()][:8]
     page["updated"] = _now()
@@ -4069,6 +4372,59 @@ async def route_local_push(repo: str = Form(""), branch: str = Form("gh-pages"),
         return RedirectResponse("/local?msg=" + quote(msg), status_code=303)
     return RedirectResponse("/local?err=" + quote(msg), status_code=303)
 
+
+
+@app.post("/history/{name}/restore", response_class=HTMLResponse)
+async def route_history_restore(name: str, index: str = Form("0"),
+                                csrf: str = Form("")):
+    """把指定历史版本恢复为当前正文（恢复前先备份当前内容）"""
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    blocked = _require_editor()
+    if blocked:
+        return blocked
+    name = unquote(name)
+    data = load_pages()
+    page = (data.get("pages") or {}).get(name)
+    if not page:
+        return RedirectResponse("/", status_code=303)
+    rows = page.get("history") or []
+    try:
+        idx = int(index)
+        target = rows[idx]
+    except (ValueError, IndexError):
+        return RedirectResponse("/history/" + quote(name) + "?err=" + quote("版本不存在"),
+                                status_code=303)
+    old_body = str(page.get("body") or "")
+    restored = str(target.get("body") or "")
+    # 恢复前把当前内容也存一版，防止恢复错了还能回来
+    rows.append({"time": _now(),
+                 "by": (CUR_USER["v"] or {}).get("username", "web"),
+                 "body": old_body})
+    page["body"] = restored
+    page["updated"] = _now()
+    page["edits"] = int(page.get("edits", 0)) + 1
+    page["history"] = rows[-50:]
+    save_pages(data)
+    audit("回滚词条", name, f"恢复到第 {len(rows) - idx} 版")
+    logger.info(f"[wiki] 回滚词条：{name}")
+    return RedirectResponse("/p/" + quote(name), status_code=303)
+
+
+@app.post("/api/preview")
+async def route_api_preview(request: Request):
+    """编辑页实时预览：把 Markdown 转成 HTML 返回"""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "请求格式错误"}, status_code=400)
+    body = str(data.get("body") or "")[:MAX_BODY]
+    try:
+        html_out = md_to_html(body)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)[:120]}, status_code=400)
+    return JSONResponse({"ok": True, "html": html_out})
 
 @app.get("/health", response_class=JSONResponse)
 async def route_health() -> JSONResponse:
