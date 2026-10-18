@@ -32,11 +32,28 @@ from urllib.parse import quote, unquote
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               StreamingResponse,
                                PlainTextResponse, RedirectResponse)
 import uvicorn
 
-from nonebot import get_driver
-from nonebot.log import logger
+try:
+    from nonebot import get_driver
+    from nonebot.log import logger
+except ImportError:                       # 本地桌面版不需要 NoneBot
+    import logging as _logging
+
+    class _LocalDriver:
+        def on_startup(self, fn):
+            return fn
+
+    _logging.basicConfig(level=_logging.INFO,
+                         format="%(asctime)s [%(levelname)s] %(message)s",
+                         datefmt="%m-%d %H:%M:%S")
+    logger = _logging.getLogger("wiki")
+    _local_driver = _LocalDriver()
+
+    def get_driver():
+        return _local_driver
 
 # ============================================================
 # 配置与数据
@@ -822,6 +839,9 @@ table.t th{
 table.t td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
 table.t tbody tr{transition:background .12s}
 table.t tbody tr:hover td{background:var(--panel2)}
+.cmdblock{white-space:pre-wrap;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:16px;font-size:12.5px;line-height:1.9;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
 .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(156px,1fr));gap:14px}
 .thumb{
@@ -1283,6 +1303,7 @@ def view_new(title: str = "") -> str:
     <h1>新建词条</h1>
     <div class="meta"><span>标题建议用名词短语，例如「电压表」「群规」</span></div>
     <form class="form" method="post" action="/new">
+      {{CSRF_FIELD}}
       <label>标题</label>
       <input type="text" name="title" value="{_esc(title)}" maxlength="{MAX_TITLE}" required>
       <label>标签（英文逗号分隔，可留空）</label>
@@ -1314,6 +1335,7 @@ def view_edit(name: str) -> str:
     <h1>编辑：{_esc(name)}</h1>
     <div class="meta"><span>保存后会留一份历史版本</span></div>
     <form class="form" method="post" action="/edit/{quote(name)}">
+      {{CSRF_FIELD}}
       <label>标签（英文逗号分隔）</label>
       <input type="text" name="tags" value="{_esc(','.join(page.get('tags') or []))}">
       <label>正文</label>
@@ -1642,7 +1664,8 @@ def _admin_tabs(active: str) -> str:
     items = [("/admin", "总览", "home"), ("/admin/load", "服务器负载", "load"),
              ("/admin/media", "媒体库", "media"), ("/admin/pages", "词条管理", "pages"),
              ("/admin/cookies", "Cookie 分发", "cookies"),
-             ("/admin/audit", "操作日志", "audit"), ("/admin/mail", "邮件", "mail")]
+             ("/admin/audit", "操作日志", "audit"),
+             ("/admin/static", "静态导出", "static"), ("/admin/mail", "邮件", "mail")]
     return '<div class="tabs">' + "".join(
         f'<a class="{"on" if k == active else ""}" href="{href}">{label}</a>'
         for href, label, k in items) + "</div>"
@@ -1954,6 +1977,134 @@ def view_privacy() -> str:
     return _layout("隐私说明", inner)
 
 
+
+# ============================================================
+# 本地 WebUI（编辑 + 导出 + 推送）
+# ============================================================
+LOCAL_CSS = """
+.local-wrap{max-width:1000px;margin:0 auto;padding:28px 22px 60px}
+.local-head{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+.local-head h1{font-size:26px;margin:0}
+.local-badge{font-size:11.5px;background:var(--accent-soft);color:var(--accent-ink);
+  padding:3px 10px;border-radius:20px}
+.local-sub{font-size:13px;color:var(--sub);margin:6px 0 26px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow)}
+.panel h2{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+.panel h2 .n{width:22px;height:22px;border-radius:7px;background:var(--accent-soft);
+  color:var(--accent-ink);display:grid;place-items:center;font-size:12px;font-weight:700}
+.panel p{font-size:13.5px;color:var(--sub);line-height:1.85;margin:0 0 10px}
+.panel code{background:var(--soft);padding:2px 8px;border-radius:6px;
+  font-size:12.5px;color:var(--accent-ink);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row input[type=text]{flex:1;min-width:240px;padding:10px 13px;border:1px solid var(--line);
+  border-radius:9px;background:var(--bg);color:var(--ink);font-size:14px;outline:none}
+.row input[type=text]:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.result{margin-top:12px;padding:11px 14px;border-radius:9px;font-size:13.5px;line-height:1.7}
+.result.ok{background:var(--accent-soft);color:var(--accent-ink);
+  border-left:3px solid var(--accent)}
+.result.err{background:var(--warm-soft);color:var(--warm);border-left:3px solid var(--warm)}
+.stats{display:flex;gap:22px;font-size:13px;color:var(--sub);margin-top:12px;flex-wrap:wrap}
+.stats b{color:var(--ink);font-size:15px}
+.steps{counter-reset:s;list-style:none;padding:0;margin:0}
+.steps li{counter-increment:s;position:relative;padding:0 0 12px 30px;
+  font-size:13.5px;color:var(--sub);line-height:1.8}
+.steps li::before{content:counter(s);position:absolute;left:0;top:1px;
+  width:20px;height:20px;border-radius:50%;background:var(--soft);
+  color:var(--accent-ink);font-size:11.5px;display:grid;place-items:center;font-weight:700}
+.mini-list{display:flex;flex-direction:column;gap:2px}
+.mini-list a{display:flex;justify-content:space-between;padding:9px 12px;
+  border-radius:8px;font-size:14px;color:var(--ink2)}
+.mini-list a:hover{background:var(--soft);color:var(--accent);text-decoration:none}
+.mini-list a span{font-size:12px;color:var(--faint)}
+"""
+
+
+def view_local(msg: str = "", err: str = "") -> str:
+    """本地编辑台：可以编辑词条、导出静态站、推送 GitHub"""
+    pages = load_pages().get("pages") or {}
+    total = len(pages)
+    stat = {}
+    try:
+        stat = export_stats()
+    except Exception:
+        stat = {}
+    rows = ""
+    for n, p in sorted(pages.items()):
+        upd = datetime.fromtimestamp(float(p.get("updated", 0))).strftime("%m-%d %H:%M")
+        rows += (f'<a href="/edit/{quote(n)}">{_esc(n)}'
+                 f'<span>{int(p.get("edits", 0))} 次编辑 · {upd}</span></a>')
+    notice = f'<div class="result ok">{_esc(msg)}</div>' if msg else ""
+    warn = f'<div class="result err">{_esc(err)}</div>' if err else ""
+    cfg = load_config()
+    repo = str(cfg.get("github_repo") or "")
+    branch = str(cfg.get("github_branch") or "gh-pages")
+    pages_url = str(cfg.get("pages_url") or "")
+    inner = f"""
+    <style>{LOCAL_CSS}</style>
+    <div class="local-wrap">
+      <div class="local-head">
+        <h1>{SITE_NAME}</h1>
+        <span class="local-badge">本地编辑台</span>
+      </div>
+      <div class="local-sub">在你自己的电脑上编辑内容，导出成静态站，再一键发布到 GitHub Pages</div>
+      {notice}{warn}
+
+      <div class="panel">
+        <h2><span class="n">1</span>编辑内容</h2>
+        <p>共 <b>{total}</b> 个词条。点下面的词条可以修改，也可以新建。</p>
+        <div class="row" style="margin-bottom:14px">
+          <a class="btn primary" href="/new">＋ 新建词条</a>
+          <a class="btn" href="/">预览站点</a>
+        </div>
+        <div class="mini-list">{rows or "<p>还没有词条</p>"}</div>
+      </div>
+
+      <div class="panel">
+        <h2><span class="n">2</span>导出静态站</h2>
+        <p>把当前内容生成纯静态 HTML，存到 <code>wiki_data/static/</code>。</p>
+        <form method="post" action="/local/export">{{CSRF_FIELD}}
+          <button class="btn primary" type="submit">导出静态站</button>
+        </form>
+        {f'<div class="stats"><span><b>{stat.get("pages", 0)}</b> 个词条</span>' if stat else ""}
+        {f'<span><b>{stat.get("files", 0)}</b> 个文件</span>' if stat else ""}
+        {f'<span><b>{stat.get("size_kb", 0)}</b> KB</span></div>' if stat else ""}
+      </div>
+
+      <div class="panel">
+        <h2><span class="n">3</span>发布到 GitHub Pages</h2>
+        <p>填你的仓库地址，点推送就会把静态站推到 <code>{branch}</code> 分支。
+          需要本机已配置好 git 凭据（SSH key 或 token）。</p>
+        <form method="post" action="/local/push">{{CSRF_FIELD}}
+          <div class="row" style="margin-bottom:10px">
+            <input type="text" name="repo" value="{_esc(repo)}"
+                   placeholder="git@github.com:你的用户名/仓库名.git">
+          </div>
+          <div class="row" style="margin-bottom:12px">
+            <input type="text" name="branch" value="{_esc(branch)}"
+                   placeholder="gh-pages" style="max-width:200px">
+            <input type="text" name="pages_url" value="{_esc(pages_url)}"
+                   placeholder="发布后的网址（可选）">
+          </div>
+          <button class="btn primary" type="submit">推送并发布</button>
+        </form>
+        {f'<p style="margin-top:14px">发布地址：<a href="{pages_url}" target="_blank">{pages_url}</a></p>' if pages_url else ""}
+      </div>
+
+      <div class="panel">
+        <h2><span class="n">4</span>首次使用要做的事</h2>
+        <ol class="steps">
+          <li>去 GitHub 新建一个仓库（可以是私有仓库，Pages 需要公开）</li>
+          <li>仓库设置 → Pages → Source 选 <code>gh-pages</code> 分支</li>
+          <li>回到这里填上仓库地址，点「推送并发布」</li>
+          <li>等 1 分钟，访问 <code>https://你的用户名.github.io/仓库名/</code></li>
+        </ol>
+        <p style="margin-top:12px">之后再改内容，只要重复「导出 → 推送」两步。</p>
+      </div>
+    </div>"""
+    return _layout("本地编辑台", inner)
+
 # ============================================================
 # 账号相关页面：注册 / 登录 / 申请 Cookie / 审核台
 # ============================================================
@@ -2201,6 +2352,404 @@ def view_admin_cookies(msg: str = "", err: str = "") -> str:
     <tbody>{urows or '<tr><td colspan=6 style="color:var(--sub)">还没有注册用户</td></tr>'}</tbody></table>
     """
     return _layout("Cookie 分发", inner)
+
+
+
+
+# ============================================================
+# 静态导出（给 GitHub Pages / 任意静态托管用）
+# ============================================================
+# 纯静态站点没有服务端，所以：
+#   * 词条预渲染成 /p/<name>/index.html
+#   * 搜索改成前端脚本 + 预生成的 search-index.json
+#   * 登录/编辑/上传/问答等动态功能不出现在导出站
+#   * 全部相对链接，放子目录（user.github.io/wiki/）也能用
+#
+# 内存友好：逐条渲染、立即写盘、不缓存整站 HTML。
+# 峰值内存约等于「单个最大词条的正文」，数千词条也不会爆。
+
+STATIC_SEARCH_MAX = 500       # 搜索索引最多收录多少词条
+STATIC_PAGE_CHUNK = 50       # 每处理多少条落一次盘（控制内存）
+
+
+STATIC_CSS = """
+.side-tip{margin-top:22px;font-size:11.5px;color:var(--faint);
+  border-top:1px solid var(--line);padding-top:12px;line-height:1.6}
+.search-result{padding:14px 0;border-bottom:1px solid var(--line)}
+.search-result:last-child{border-bottom:none}
+.search-result a{font-size:17px;font-weight:650;color:var(--ink)}
+.search-result a:hover{color:var(--accent)}
+.search-result .ex{margin-top:5px;font-size:13.5px;color:var(--sub);line-height:1.7}
+.search-result mark{background:var(--accent-soft);color:var(--accent-ink);
+  padding:1px 3px;border-radius:3px}
+#no-hit{color:var(--sub);text-align:center;padding:50px 0}
+.search-big{width:100%;padding:13px 16px;border:1px solid var(--line);
+  border-radius:10px;background:var(--panel);color:var(--ink);font-size:15px;
+  outline:none;margin:16px 0 20px;box-sizing:border-box}
+.search-big:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.search-results{margin-top:6px}
+.hist-row{display:flex;justify-content:space-between;gap:10px;padding:11px 0;
+  border-bottom:1px dashed var(--line);font-size:14px}
+.hist-row a{color:var(--ink)}.hist-row a:hover{color:var(--accent)}
+.hist-row span{font-size:12.5px;color:var(--faint);white-space:nowrap}
+.tag-group{margin-bottom:26px}
+.tag-group h2{font-size:16.5px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.tag-count{font-size:11.5px;background:var(--soft);color:var(--sub);
+  padding:1px 8px;border-radius:10px;font-weight:400}
+.tag-links{display:flex;flex-wrap:wrap;gap:8px}
+.tag-links a{font-size:13.5px;padding:5px 12px;border-radius:8px;
+  background:var(--panel);border:1px solid var(--line);color:var(--ink2)}
+.tag-links a:hover{border-color:var(--accent);color:var(--accent)}
+"""
+
+
+def _safe_dirname(name: str) -> str:
+    """词条名转成安全的目录名：保留中文，去掉路径分隔符和控制字符"""
+    raw = str(name or "").strip()
+    raw = raw.replace("/", "_").replace("\\", "_").replace("\x00", "")
+    raw = re.sub(r'[<>:"|?*]', "_", raw)
+    raw = raw.strip(". ") or "untitled"
+    return raw[:120]
+
+def _static_layout(title: str, inner: str, crumb: str = "",
+                   depth: int = 0) -> str:
+    """静态站布局：相对链接、无动态功能入口"""
+    up = "../" * depth
+    total = len((load_pages().get("pages") or {}))
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_esc(title)} · {SITE_NAME}</title>
+<meta name="description" content="{SITE_SUB}">
+<link rel="icon" type="image/svg+xml" href="{up}favicon.svg">
+<style>{CSS}{STATIC_CSS}</style>
+</head><body>
+<div class="layout">
+  <aside class="side">
+    <div class="logo"><img src="{up}favicon.svg" alt="" class="logo-img">星海<span>百科</span></div>
+    <div class="sub">{SITE_SUB} · {total} 个词条</div>
+    <form class="search" action="{up}search/index.html" method="get" onsubmit="return staticSearch(this)">
+      <input name="q" placeholder="搜索词条…" autocomplete="off">
+      <button type="submit">搜</button>
+    </form>
+    <nav class="nav">
+      <a href="{up}index.html">首页</a>
+      <a href="{up}all/index.html">全部词条</a>
+      <a href="{up}tags/index.html">标签</a>
+      <a href="{up}recent/index.html">最近更新</a>
+    </nav>
+    <div class="side-tip">静态只读版<br>由 WIKI.HS 导出</div>
+  </aside>
+  <main class="main">
+    {f'<div class="crumb">{crumb}</div>' if crumb else ''}
+    {inner}
+    <div class="foot">
+      <span>{SITE_NAME} · 静态导出</span>
+      <span>{datetime.now().strftime("%Y-%m-%d")}</span>
+    </div>
+  </main>
+</div>
+<script src="{up}search.js"></script>
+</body></html>"""
+
+
+def _static_card(name: str, page: Dict[str, Any], depth: int = 0) -> str:
+    """静态卡片（相对链接）"""
+    title = _esc(name)
+    text = re.sub(r"\s+", " ", str(page.get("body") or ""))
+    text = re.sub(r"^\s*#{1,6}\s*", "", text, flags=re.M)
+    text = re.sub(r"\*\*|__|`|>|\[|\]", "", text).strip()[:110]
+    return (f'<a class="card" href="{("../" * depth)}p/{quote(name)}/index.html">'
+            f'<div class="t">{title}</div>'
+            f'<div class="d">{_esc(text)}</div></a>')
+
+
+def _static_article(name: str, page: Dict[str, Any]) -> str:
+    """词条正文（不含编辑按钮和问答）"""
+    tags = "".join(f'<a class="tag" href="../../tags/index.html">{_esc(t)}</a>'
+                   for t in (page.get("tags") or []))
+    updated = datetime.fromtimestamp(
+        float(page.get("updated", _now()))).strftime("%Y-%m-%d %H:%M")
+    body_html = md_to_html(page.get("body") or "")
+    return (f'<h1>{_esc(name)}</h1>'
+            f'<div class="meta"><span>🕒 {updated}</span>'
+            f'<span>✏️ {int(page.get("edits", 0))} 次编辑</span>{tags}</div>'
+            f'<article class="article">{body_html or "<p>（还没有正文）</p>"}</article>')
+
+
+
+def export_stats() -> Dict[str, Any]:
+    """看上次导出的统计（没导出返回空）"""
+    d = DATA_DIR / "static"
+    if not d.exists():
+        return {}
+    files = [f for f in d.rglob("*") if f.is_file()]
+    pages = len(list((d / "p").iterdir())) if (d / "p").exists() else 0
+    return {"pages": pages, "files": len(files),
+            "size_kb": round(sum(f.stat().st_size for f in files) / 1024, 1)}
+
+def export_static(out_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """把当前内容导出成纯静态站点
+
+    内存策略：逐条渲染 → 立即写盘 → 不保留 HTML 引用，
+    峰值内存只与「最大单篇正文」相关，不随词条总数线性增长。
+    """
+    target = Path(out_dir) if out_dir else (DATA_DIR / "static")
+    if target.exists():
+        import shutil
+        shutil.rmtree(target, ignore_errors=True)
+    target.mkdir(parents=True, exist_ok=True)
+
+    pages = load_pages().get("pages") or {}
+    total = len(pages)
+    files = 0
+
+    def write(rel: str, html: str) -> None:
+        nonlocal files
+        f = target / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(html, encoding="utf-8")
+        files += 1
+
+    # ── 首页 ──
+    if pages:
+        recent = sorted(pages.items(),
+                        key=lambda kv: -float(kv[1].get("updated", 0)))[:12]
+        cards = "".join(_static_card(n, p) for n, p in recent)
+        home = (f'<h1>{SITE_NAME}</h1>'
+                f'<div class="meta"><span>{total} 个词条</span>'
+                f'<span>{SITE_SUB}</span></div>'
+                f'<div class="cards">{cards}</div>')
+    else:
+        home = '<h1>还没有词条</h1><div class="empty">导出时数据是空的</div>'
+    write("index.html", _static_layout("首页", home))
+
+    # ── 词条（逐条写，不累积）──
+    for i, (name, page) in enumerate(pages.items(), 1):
+        write(f"p/{_safe_dirname(name)}/index.html",
+              _static_layout(name, _static_article(name, page),
+                             crumb=f'<a href="../../index.html">首页</a> / {_esc(name)}',
+                             depth=2))
+        # 每 N 条回收一次引用，避免大字典长期驻留
+        if i % STATIC_PAGE_CHUNK == 0:
+            page = None  # noqa
+
+    # ── 全部词条 ──
+    all_cards = "".join(_static_card(n, p) for n, p in sorted(pages.items()))
+    write("all/index.html", _static_layout(
+        "全部词条",
+        f'<h1>全部词条</h1><div class="meta"><span>{total} 个</span></div>'
+        f'<div class="cards">{all_cards or "<div class=empty>暂无词条</div>"}</div>',
+        depth=1))
+    del all_cards
+
+    # ── 标签 ──
+    tag_map: Dict[str, List[str]] = {}
+    for n, p in pages.items():
+        for t in (p.get("tags") or []):
+            tag_map.setdefault(t, []).append(n)
+    tag_html = ""
+    for t in sorted(tag_map):
+        links = "".join(f'<a href="../../p/{quote(n)}/index.html">{_esc(n)}</a>'
+                        for n in sorted(tag_map[t]))
+        tag_html += (f'<div class="tag-group"><h2>{_esc(t)}'
+                     f'<span class="tag-count">{len(tag_map[t])}</span></h2>'
+                     f'<div class="tag-links">{links}</div></div>')
+    write("tags/index.html", _static_layout(
+        "标签", f'<h1>标签</h1><div class="meta"><span>{len(tag_map)} 个标签</span></div>'
+        f'{tag_html or "<div class=empty>还没有标签</div>"}', depth=1))
+    del tag_html, tag_map
+
+    # ── 最近更新 ──
+    recent = sorted(pages.items(), key=lambda kv: -float(kv[1].get("updated", 0)))[:100]
+    rows = "".join(
+        f'<div class="hist-row"><a href="../../p/{quote(n)}/index.html">{_esc(n)}</a>'
+        f'<span>{datetime.fromtimestamp(float(p.get("updated", 0))).strftime("%Y-%m-%d %H:%M")}</span></div>'
+        for n, p in recent)
+    write("recent/index.html", _static_layout(
+        "最近更新", f'<h1>最近更新</h1><div class="recent-list">{rows}</div>', depth=1))
+    del rows, recent
+
+    # ── 搜索索引 ──
+    index: List[Dict[str, str]] = []
+    for n, p in list(pages.items())[:STATIC_SEARCH_MAX]:
+        body = re.sub(r"\s+", " ", str(p.get("body") or ""))
+        body = re.sub(r"[#*`>\[\]]", "", body).strip()[:150]
+        index.append({"t": n, "u": f"../p/{quote(n)}/index.html",
+                      "b": body, "g": " ".join(p.get("tags") or [])})
+    (target / "search-index.json").write_text(
+        json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    files += 1
+    del index
+
+    write("search/index.html", _static_layout(
+        "搜索",
+        '<h1>搜索</h1>'
+        '<div class="meta"><span>在标题、摘要、标签里找</span></div>'
+        '<input id="sq" class="search-big" placeholder="输入关键词…" autocomplete="off">'
+        '<div id="sr" class="search-results"></div>'
+        '<div id="no-hit" style="display:none">没有找到相关词条</div>',
+        depth=1))
+
+    # ── 搜索脚本 ──
+    (target / "search.js").write_text(STATIC_SEARCH_JS, encoding="utf-8")
+    files += 1
+
+    # ── 图标 ──
+    fav = DATA_DIR / "favicon.svg"
+    if fav.exists():
+        (target / "favicon.svg").write_bytes(fav.read_bytes())
+        files += 1
+
+    size_kb = round(sum(f.stat().st_size for f in target.rglob("*")
+                        if f.is_file()) / 1024, 1)
+    return {"dir": str(target), "pages": total, "files": files, "size_kb": size_kb}
+STATIC_SEARCH_JS = """
+(function () {
+  window.staticSearch = function (form) {
+    var q = (form.q.value || "").trim();
+    if (!q) { return false; }
+    var depth = /\\/p\\//.test(location.pathname) ? "../../" : "../";
+    location.href = depth + "search/index.html?q=" + encodeURIComponent(q);
+    return false;
+  };
+
+  var input = document.getElementById("sq");
+  if (!input) { return; }
+  var box = document.getElementById("sr");
+  var none = document.getElementById("no-hit");
+  var data = [];
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function highlight(text, q) {
+    var low = text.toLowerCase();
+    var out = "", pos = 0, at = low.indexOf(q);
+    var guard = 0;
+    while (at >= 0 && out.length < 500 && guard < 30) {
+      out += text.slice(pos, at) + "<mark>" + text.slice(at, at + q.length) + "</mark>";
+      pos = at + q.length;
+      at = low.indexOf(q, pos);
+      guard++;
+    }
+    return out + text.slice(pos);
+  }
+
+  function render() {
+    var q = (input.value || "").trim().toLowerCase();
+    if (!q) { box.innerHTML = ""; none.style.display = "none"; return; }
+    var html = "", hits = 0;
+    for (var i = 0; i < data.length && hits < 40; i++) {
+      var it = data[i];
+      if ((it.t + " " + it.b + " " + it.g).toLowerCase().indexOf(q) >= 0) {
+        hits++;
+        html += '<div class="search-result"><a href="' + it.u + '">' +
+                esc(it.t) + '</a><div class="ex">' + highlight(esc(it.b), q) +
+                "</div></div>";
+      }
+    }
+    none.style.display = hits ? "none" : "block";
+    box.innerHTML = html;
+  }
+
+  fetch("../search-index.json")
+    .then(function (r) { return r.json(); })
+    .then(function (d) { data = d; render(); })
+    .catch(function () { none.style.display = "block"; });
+
+  input.addEventListener("input", render);
+  var p = new URLSearchParams(location.search);
+  if (p.get("q")) { input.value = p.get("q"); }
+  render();
+})();
+"""
+
+
+
+# ============================================================
+# 本地桌面版（下载者在自己电脑上跑）
+# ============================================================
+# 用法：
+#   python wiki.py --local            启动本地 WebUI（自动开浏览器）
+#   python wiki.py --local --port 8080
+#   python wiki.py --export 输出目录    只在命令行导出静态站
+#
+# 本地模式特点：
+#   * 不需要 NoneBot，不需要邮箱、不需要账号体系
+#   * 只能用本机访问（127.0.0.1），不对外暴露
+#   * 编辑完点「导出」生成静态站，再点「推送」发到你的 GitHub Pages
+
+LOCAL_HOST = "127.0.0.1"
+
+
+def is_local_mode() -> bool:
+    """当前是不是本地桌面版"""
+    return bool(os.environ.get("WIKI_LOCAL"))
+
+
+def local_owner() -> Dict[str, Any]:
+    """本地模式下的伪站长（无需登录）"""
+    return {"uid": "local", "username": "本机用户", "role": ROLE_OWNER,
+            "email": "", "local": True}
+
+
+def push_static_to_github(repo: str, branch: str = "gh-pages",
+                          message: str = "") -> Tuple[bool, str]:
+    """把导出的静态站推送到 GitHub（用本机已配置的 git 凭据）
+
+    repo 形如 git@github.com:user/repo.git 或 https://github.com/user/repo.git
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    src = DATA_DIR / "static"
+    if not src.exists():
+        return False, "还没有导出，请先点「导出静态站」"
+    if not repo.strip():
+        return False, "请填写仓库地址"
+
+    work = Path(tempfile.mkdtemp(prefix="wiki-push-"))
+    try:
+        def run(*args, **kw):
+            return subprocess.run(args, cwd=str(work), capture_output=True,
+                                  text=True, timeout=kw.pop("timeout", 120))
+
+        run("git", "init", "-q")
+        run("git", "config", "user.name", "wiki-hs")
+        run("git", "config", "user.email", "wiki-hs@local")
+        # 复制静态站
+        for f in src.rglob("*"):
+            if f.is_file():
+                rel = f.relative_to(src)
+                dst = work / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, dst)
+        (work / ".nojekyll").write_text("", encoding="utf-8")
+        run("git", "add", "-A")
+        r = run("git", "commit", "-q", "-m",
+                message or f"docs: 更新静态站 {datetime.now():%Y-%m-%d %H:%M}")
+        if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
+            return False, f"提交失败：{(r.stderr or r.stdout)[:200]}"
+        run("git", "branch", "-M", branch)
+        run("git", "remote", "add", "origin", repo.strip())
+        r = run("git", "push", "-f", "origin", branch, timeout=180)
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout)[:300]
+            return False, f"推送失败：{err}"
+        return True, f"已推送到 {branch} 分支"
+    except subprocess.TimeoutExpired:
+        return False, "推送超时，请检查网络或仓库地址"
+    except Exception as e:
+        return False, f"出错：{str(e)[:200]}"
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
 
 
 # ============================================================
@@ -2810,6 +3359,14 @@ async def _auth_middleware(request: Request, call_next):
     """每个请求解析一次身份：会话 Cookie → 用户；同时兼容旧口令"""
     token = request.cookies.get(COOKIE_NAME, "")
     CUR_SESSION["v"] = token
+    # 本地模式：无需登录，直接是站长
+    if is_local_mode():
+        IS_EDITOR["v"] = True
+        CUR_USER["v"] = local_owner()
+        resp = await call_next(request)
+        resp.headers.update(SECURITY_HEADERS)
+        resp.headers["Content-Security-Policy"] = csp_policy()
+        return resp
     user = session_user(token)
     if user is None:
         # 兼容旧版编辑口令 cookie（站长快捷登录）
@@ -2842,6 +3399,8 @@ async def _auth_middleware(request: Request, call_next):
 def csrf_token() -> str:
     """由站长口令 + 当前会话派生，同一会话内稳定"""
     user = CUR_USER["v"] or {}
+    if is_local_mode():
+        return "local-mode"
     seed = str(user.get("uid") or "") + "|" + str(current_token() or "")
     return hmac.new(seed.encode("utf-8"), b"csrf", hashlib.sha256).hexdigest()[:32]
 
@@ -2855,6 +3414,9 @@ def csrf_ok(form_token: str) -> bool:
 
 def _csrf_guard(form_token: str) -> Optional[HTMLResponse]:
     """已登录用户的 POST 一律校验 CSRF；登录/注册阶段还没有会话，跳过"""
+    # 本地桌面版只监听 127.0.0.1，不存在跨站风险，直接放行
+    if is_local_mode():
+        return None
     user = CUR_USER["v"]
     if not user:
         return None
@@ -2893,6 +3455,8 @@ def _require_owner() -> Optional[HTMLResponse]:
 
 @app.get("/", response_class=HTMLResponse)
 async def route_home() -> HTMLResponse:
+    if is_local_mode():
+        return RedirectResponse("/local", status_code=303)
     return HTMLResponse(view_home())
 
 
@@ -3365,6 +3929,133 @@ async def route_download_page() -> HTMLResponse:
     html = html.replace("</head>", override + "</head>", 1)
     html = html.replace('<body>', '<body class="dl-page">', 1)
     return HTMLResponse(html)
+
+
+@app.get("/admin/static", response_class=HTMLResponse)
+async def route_admin_static() -> HTMLResponse:
+    """静态导出：生成可直接部署到 GitHub Pages 的站点"""
+    blocked = _require_owner()
+    if blocked:
+        return blocked
+    info = None
+    err = ""
+    try:
+        info = export_static()
+        audit("静态导出", info["dir"],
+              f"{info['pages']} 个词条，{info['files']} 个文件")
+    except Exception as e:
+        err = str(e)[:200]
+        logger.warning(f"[wiki] 静态导出失败: {e}")
+    body = ""
+    if info:
+        body = (f'<div class="notice">导出完成：{info["pages"]} 个词条，'
+                f'{info["files"]} 个文件，共 {info["size_kb"]} KB<br>'
+                f'目录：<code>{_esc(info["dir"])}</code></div>')
+    if err:
+        body += f'<div class="notice warn">导出失败：{_esc(err)}</div>'
+    inner = f"""
+    <div class="admin-head"><h1>静态导出</h1>
+      <div class="t">生成可部署到 GitHub Pages 的纯静态站点</div></div>
+    {_admin_tabs("static")}
+    {body}
+    <div class="notice">
+      静态版是<strong>只读</strong>的：没有登录、编辑、上传和问答，
+      但可以在任何静态托管上免费运行（GitHub Pages / Cloudflare Pages / Netlify）。
+    </div>
+    <div style="display:flex;gap:10px;margin:20px 0">
+      <form method="post" action="/admin/static/run">{{CSRF_FIELD}}
+        <button class="btn primary" type="submit">重新导出</button></form>
+      <a class="btn" href="/admin/static/download">下载静态站 zip</a>
+    </div>
+    <h2 style="font-size:16px;margin:26px 0 10px">部署到 GitHub Pages</h2>
+    <pre class="cmdblock">1. 点上面的「下载静态站 zip」并解压
+2. 在 GitHub 新建仓库，把解压内容推上去
+3. Settings → Pages → Source 选 main 分支 / root
+4. 等 1 分钟，访问 https://用户名.github.io/仓库名/</pre>
+    <h2 style="font-size:16px;margin:26px 0 10px">命令行导出</h2>
+    <p style="font-size:13.5px;color:var(--sub);line-height:1.9">
+      服务器上也可以直接跑（不影响线上服务）：<br>
+      <code>python -c "import wiki; wiki.export_static('/tmp/static')"</code></p>
+    """
+    return HTMLResponse(_layout("静态导出", inner))
+
+
+@app.post("/admin/static/run")
+async def route_admin_static_run(csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    if not is_owner(CUR_USER["v"]):
+        return RedirectResponse("/admin/static?err=" + quote("只有站长能导出"),
+                                status_code=303)
+    return RedirectResponse("/admin/static", status_code=303)
+
+
+@app.get("/admin/static/download")
+async def route_admin_static_download():
+    """把导出目录打包成 zip 下载"""
+    if not is_owner(CUR_USER["v"]):
+        return PlainTextResponse("需要站长权限", status_code=403)
+    src = DATA_DIR / "static"
+    if not src.exists():
+        return PlainTextResponse("还没有导出，请先点「重新导出」", status_code=404)
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(src.rglob("*")):
+            if f.is_file():
+                z.write(f, f.relative_to(src))
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/zip",
+                             headers={"Content-Disposition":
+                                      'attachment; filename="wiki-static.zip"'})
+
+
+# ============================================================
+# 本地模式路由（只有 --local 启动时才挂载）
+# ============================================================
+
+@app.get("/local", response_class=HTMLResponse)
+async def route_local(msg: str = "", err: str = "") -> HTMLResponse:
+    return HTMLResponse(view_local(msg, err))
+
+
+@app.post("/local/export", response_class=HTMLResponse)
+async def route_local_export(csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    try:
+        info = export_static()
+        return RedirectResponse(
+            "/local?msg=" + quote(
+                f"导出成功：{info['pages']} 个词条，{info['files']} 个文件，{info['size_kb']} KB"),
+            status_code=303)
+    except Exception as e:
+        return RedirectResponse("/local?err=" + quote(f"导出失败：{e}"), status_code=303)
+
+
+@app.post("/local/push", response_class=HTMLResponse)
+async def route_local_push(repo: str = Form(""), branch: str = Form("gh-pages"),
+                           pages_url: str = Form(""), csrf: str = Form("")):
+    blocked = _csrf_guard(csrf)
+    if blocked:
+        return blocked
+    # 记住配置，下次不用再填
+    try:
+        cfg = load_config()
+        cfg["github_repo"] = repo.strip()
+        cfg["github_branch"] = (branch or "gh-pages").strip()
+        cfg["pages_url"] = pages_url.strip()
+        CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
+                               encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"[wiki] 保存 GitHub 配置失败: {e}")
+    ok, msg = push_static_to_github(repo, branch or "gh-pages")
+    if ok:
+        return RedirectResponse("/local?msg=" + quote(msg), status_code=303)
+    return RedirectResponse("/local?err=" + quote(msg), status_code=303)
 
 
 @app.get("/health", response_class=JSONResponse)
@@ -4303,5 +4994,79 @@ async def _wiki_startup() -> None:
     logger.info(f"[wiki] 🔗 登录地址：{PUBLIC_URL}/login?token={EDIT_TOKEN}")
     logger.info("=" * 62)
 
+
+
+
+# ============================================================
+# 独立运行入口（下载者本地用）
+# ============================================================
+def run_local(port: int = 8080, open_browser: bool = True) -> None:
+    """本地桌面版：只监听 127.0.0.1，不对外暴露"""
+    import asyncio
+    import webbrowser
+
+    os.environ["WIKI_LOCAL"] = "1"
+    global CONFIG, EDIT_TOKEN
+    CONFIG = load_config()
+    EDIT_TOKEN = str(CONFIG.get("token") or "")
+    seed_if_empty()
+
+    url = f"http://{LOCAL_HOST}:{port}/local"
+    print("=" * 60)
+    print("  星海百科 · 本地编辑台")
+    print("=" * 60)
+    print(f"  地址：{url}")
+    print(f"  数据：{DATA_DIR}")
+    print("  按 Ctrl+C 停止")
+    print("=" * 60)
+    if open_browser:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    class _LocalDriver:
+        """本地模式不需要 NoneBot，给启动钩子一个最小替身"""
+
+    async def _serve() -> None:
+        cfg = uvicorn.Config(app, host=LOCAL_HOST, port=port, log_level="warning")
+        await uvicorn.Server(cfg).serve()
+
+    asyncio.run(_serve())
+
+
+def _cli() -> None:
+    """命令行入口：python wiki.py --local / --export 目录"""
+    import sys
+    args = sys.argv[1:]
+    if not args:
+        print("用法：")
+        print("  python wiki.py --local              启动本地编辑台（推荐）")
+        print("  python wiki.py --local --port 8080  指定端口")
+        print("  python wiki.py --export 输出目录     只导出静态站")
+        return
+    if "--export" in args:
+        i = args.index("--export")
+        out = Path(args[i + 1]) if len(args) > i + 1 else (DATA_DIR / "static")
+        info = export_static(out)
+        print(f"导出完成：{info['pages']} 个词条，{info['files']} 个文件，"
+              f"{info['size_kb']} KB → {info['dir']}")
+        return
+    if "--local" in args:
+        port = 8080
+        if "--port" in args:
+            j = args.index("--port")
+            if len(args) > j + 1:
+                try:
+                    port = int(args[j + 1])
+                except ValueError:
+                    pass
+        run_local(port=port, open_browser=("--no-browser" not in args))
+        return
+    print("未知参数，用 --help 查看用法")
+
+
+if __name__ == "__main__":
+    _cli()
 
 logger.info("📚 星海百科网站已加载（替代原斗地主网页服务，端口 8081）")
